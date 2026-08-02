@@ -68,17 +68,52 @@ func (c *Client) encodeParams(params []smtp.Param, allowUnadvertised bool) ([]st
 		if err != nil {
 			return nil, fmt.Errorf("smtpclient: invalid esmtp parameter %q: %w", param.Keyword, err)
 		}
-		if !allowUnadvertised && !c.advertises(param.Keyword) {
-			return nil, fmt.Errorf("smtpclient: server did not advertise extension %q required by parameter", param.Keyword)
+		if required := parameterExtension(param); !allowUnadvertised && required != "" && !c.advertises(required) {
+			return nil, fmt.Errorf("smtpclient: server did not advertise extension %q required by parameter %q", required, param.Keyword)
 		}
 		encoded = append(encoded, wireParam)
 	}
 	return encoded, nil
 }
 
+// parameterExtension maps the esmtp-parameters whose keyword differs from
+// their advertising EHLO extension. Unknown parameters deliberately fall back
+// to their own keyword: that preserves Extra as an open-ended escape hatch
+// while still providing useful validation for registered parameter families.
+func parameterExtension(param smtp.Param) string {
+	switch strings.ToUpper(param.Keyword) {
+	case "AUTH":
+		return string(smtp.ExtAuth)
+	case "RET", "ENVID", "NOTIFY", "ORCPT":
+		return string(smtp.ExtDSN)
+	case "BY":
+		return string(smtp.ExtDeliverBy)
+	case "HOLDFOR", "HOLDUNTIL":
+		return string(smtp.ExtFutureRelease)
+	case "SOLICIT":
+		return string(smtp.ExtNoSoliciting)
+	case "TRANSID":
+		return string(smtp.ExtMTRK)
+	case "BODY":
+		switch strings.ToUpper(param.Value) {
+		case "7BIT":
+			return ""
+		case "8BITMIME":
+			return string(smtp.Ext8BitMIME)
+		case "BINARYMIME":
+			return string(smtp.ExtBinaryMIME)
+		}
+	}
+	return strings.ToUpper(param.Keyword)
+}
+
 func (c *Client) advertises(keyword string) bool {
 	c.conn.mu.Lock()
 	defer c.conn.mu.Unlock()
+	if strings.EqualFold(keyword, string(smtp.ExtAuth)) {
+		_, ok := authAdvertisement(c.conn.ext)
+		return ok
+	}
 	_, ok := c.conn.ext[strings.ToUpper(keyword)]
 	return ok
 }

@@ -14,8 +14,14 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"strconv"
 	"strings"
 )
+
+// maxSCRAMIterations bounds server-controlled PBKDF2 work. RFC 5802 requires
+// a positive iteration count but supplies no upper bound; accepting an
+// arbitrary count would let a hostile server monopolise the caller's CPU.
+const maxSCRAMIterations = 100_000
 
 // Config supplies mechanism credentials.  Password and Token are copied only
 // as needed by a mechanism; callers should discard their own credential data
@@ -179,7 +185,8 @@ func (s *scram) clientFinal(serverFirst string) ([]byte, bool, error) {
 	if nonce == "" || !strings.HasPrefix(nonce, s.nonce) || salt64 == "" {
 		return nil, false, errors.New("smtpsasl: malformed SCRAM server-first message")
 	}
-	if _, err := fmt.Sscanf(f["i"], "%d", &iter); err != nil || iter < 1 {
+	iter, err := strconv.Atoi(f["i"])
+	if err != nil || iter < 1 || iter > maxSCRAMIterations {
 		return nil, false, errors.New("smtpsasl: invalid SCRAM iteration count")
 	}
 	salt, err := base64.StdEncoding.DecodeString(salt64)

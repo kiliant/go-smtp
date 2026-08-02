@@ -41,3 +41,18 @@ func TestSCRAMSHA256Vector(t *testing.T) {
 		t.Fatal("accepted invalid SCRAM verifier")
 	}
 }
+
+func TestSCRAMRejectsExcessiveIterations(t *testing.T) {
+	m, err := New("SCRAM-SHA-256", Config{Username: "user", Password: "pencil"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := m.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := strings.Split(string(first), "r=")[1]
+	if _, _, err := m.Next([]byte("r=" + nonce + "srv,s=QSXCR+Q6sek8bf92,i=100001")); err == nil {
+		t.Fatal("accepted an excessive SCRAM iteration count")
+	}
+}

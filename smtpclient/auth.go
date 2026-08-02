@@ -74,7 +74,7 @@ func (c *Client) Auth(ctx context.Context, opts *AuthOptions) error {
 	defer c.conn.opMu.Unlock()
 	c.conn.mu.Lock()
 	state := c.conn.state
-	params, advertised := c.conn.ext[string(smtp.ExtAuth)]
+	params, advertised := authAdvertisement(c.conn.ext)
 	raw := c.conn.raw
 	c.conn.mu.Unlock()
 	if err := invalidState("AUTH", state, stateGreeted, stateTLS); err != nil {
@@ -181,6 +181,22 @@ func authMechanisms(params string) map[string]bool {
 		out[strings.ToUpper(name)] = true
 	}
 	return out
+}
+
+// authAdvertisement accepts both the RFC 4954 AUTH keyword and the historic
+// AUTH=<mechanism> form emitted by older servers. The EHLO parser correctly
+// preserves the latter as a distinct (though non-standard) keyword, so join
+// its mechanism suffix to any remaining raw parameters here.
+func authAdvertisement(ext map[string]string) (string, bool) {
+	if params, ok := ext[string(smtp.ExtAuth)]; ok {
+		return params, true
+	}
+	for keyword, params := range ext {
+		if suffix, ok := strings.CutPrefix(keyword, "AUTH="); ok {
+			return strings.TrimSpace(suffix + " " + params), true
+		}
+	}
+	return "", false
 }
 func selectMechanism(preferred []string, available map[string]bool) (string, error) {
 	if len(preferred) == 0 {

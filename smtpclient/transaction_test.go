@@ -121,3 +121,36 @@ func TestMailExtraValidatesAdvertisedExtensionBeforeWrite(t *testing.T) {
 		t.Fatalf("Mail error = %v, want missing SIZE extension", err)
 	}
 }
+
+func TestMailExtraUsesAdvertisingExtension(t *testing.T) {
+	raw, done := startFakeServer(t, []fakeStep{
+		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250 DSN\r\n")},
+		{command: "MAIL FROM:<sender@example.test> RET=FULL", replies: fakeReplies("250 sender ok\r\n")},
+	}, nil)
+	defer done()
+	c, err := NewClient(context.Background(), raw, &ClientOptions{Identity: "client.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "RET", Value: "FULL"}}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParameterExtensionMappings(t *testing.T) {
+	tests := []struct {
+		param smtp.Param
+		want  string
+	}{
+		{smtp.Param{Keyword: "RET", Value: "FULL"}, "DSN"},
+		{smtp.Param{Keyword: "ENVID", Value: "id"}, "DSN"},
+		{smtp.Param{Keyword: "BY", Value: "10"}, "DELIVERBY"},
+		{smtp.Param{Keyword: "BODY", Value: "8BITMIME"}, "8BITMIME"},
+		{smtp.Param{Keyword: "BODY", Value: "7BIT"}, ""},
+	}
+	for _, test := range tests {
+		if got := parameterExtension(test.param); got != test.want {
+			t.Errorf("parameterExtension(%+v) = %q, want %q", test.param, got, test.want)
+		}
+	}
+}
