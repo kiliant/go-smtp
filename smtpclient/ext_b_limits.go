@@ -11,6 +11,8 @@ import (
 // Limits is the registered subset of RFC 9422 server limits. Unknown limits
 // remain available through Extension, so later IANA registrations do not need
 // an API change before callers can observe them.
+//
+// Callers constructing a Limits literal must use keyed fields.
 type Limits struct {
 	MailMax       uint32
 	RcptMax       uint32
