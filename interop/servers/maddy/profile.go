@@ -1,18 +1,16 @@
 // Package maddy registers the maddy interop profile: an independent Go
 // implementation, a different bug class from the C servers (docs/INTEROP.md).
 //
-// NOT LIVE-VERIFIED this session. maddy.conf is a from-scratch minimal
-// configuration and the account (interop@example.test) is not yet
-// provisioned inside the image — that needs `maddy creds create` /
-// `maddy imap-acct create` run against the running instance, which this
-// Containerfile does not yet do. AssertProfile will fail loudly rather than
-// silently pass if the listener or account is not actually there.
+// The image provisions interop@example.test at startup and the matrix verifies
+// a public smtpclient transaction through maddy's supported management CLI.
+// Verified end to end on 2026-08-02.
 package maddy
 
 import (
 	"context"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	smtp "github.com/kiliant/go-smtp"
 	"github.com/kiliant/go-smtp/interop/harness"
@@ -47,8 +45,34 @@ func containerfileDir() string {
 }
 
 func newSink(ctx context.Context, h *harness.Handle) (harness.Sink, error) {
-	return harness.MaildirSink{
-		Exec: h,
-		Dir:  func(recipient string) string { return "/data/mail/" + recipient },
-	}, nil
+	return &sink{exec: h}, nil
+}
+
+// maddy stores message metadata in imapsql and bodies in a content-addressed
+// blob store, not Maildir. Use its supported management CLI so the sink follows
+// the database mapping instead of guessing blob filenames.
+type sink struct{ exec harness.Execer }
+
+func (s *sink) Fetch(ctx context.Context, recipient string) ([]harness.Message, error) {
+	listed, err := s.exec.Exec(ctx, "/bin/maddy", "-config", "/data/maddy.conf", "imap-msgs", "list", recipient, "INBOX")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(string(listed)) == "" {
+		return nil, nil
+	}
+	raw, err := s.exec.Exec(ctx, "/bin/maddy", "-config", "/data/maddy.conf", "imap-msgs", "dump", recipient, "INBOX", "1")
+	if err != nil {
+		return nil, err
+	}
+	return []harness.Message{{Recipient: recipient, Raw: raw}}, nil
+}
+
+func (s *sink) Reset(ctx context.Context, recipient string) error {
+	listed, err := s.exec.Exec(ctx, "/bin/maddy", "-config", "/data/maddy.conf", "imap-msgs", "list", recipient, "INBOX")
+	if err != nil || strings.TrimSpace(string(listed)) == "" {
+		return err
+	}
+	_, err = s.exec.Exec(ctx, "/bin/maddy", "-config", "/data/maddy.conf", "imap-msgs", "remove", "--yes", recipient, "INBOX", "1:*")
+	return err
 }

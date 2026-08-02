@@ -13,11 +13,12 @@ package interop
 import (
 	"bytes"
 	"context"
-	"net/smtp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kiliant/go-smtp/interop/harness"
+	"github.com/kiliant/go-smtp/smtpclient"
 
 	// Blank-imported so each server's init() registers its profile as a
 	// side effect of import, independent of test execution order.
@@ -34,15 +35,11 @@ import (
 const recipient = "interop@example.test"
 
 // TestMatrix starts every profile the harness config selects, asserts its
-// advertised capabilities against what its profile claims, and — where the
-// profile is wired for it — seeds one message independently of go-smtp
-// (net/smtp is the standard library's own frozen client, not this
-// project's) and proves the sink reads back the same bytes modulo trace
-// headers. This is the "smoke transaction" T06 is done when it passes.
-//
-// It deliberately does not exercise smtpclient's own MAIL/RCPT/DATA: T06
-// depends only on T03, and that command surface is T05's. The capability
-// assertion (AssertProfile) is what actually exercises smtpclient today.
+// advertised capabilities against what its profile claims, then sends a real
+// MAIL/RCPT/DATA transaction through smtpclient and proves the sink reads back
+// the same bytes modulo trace headers. This is the "smoke transaction" T06 is
+// done when it passes. The transaction must use this module's public client:
+// seeding with net/smtp only validates a server and leaves the client untested.
 func TestMatrix(t *testing.T) {
 	cfg := harness.LoadConfig()
 	profiles := harness.Selected(cfg)
@@ -109,8 +106,13 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 	}
 
 	port, ok := p.SMTPPort()
+	lmtp := false
 	if !ok {
-		t.Logf("%s: no plain SMTP port; skipping the sink smoke transaction", p.Name)
+		port, ok = p.LMTPPort()
+		lmtp = ok
+	}
+	if !ok {
+		t.Logf("%s: no SMTP or LMTP port; skipping the sink smoke transaction", p.Name)
 		return
 	}
 	addr, ok := h.HostAddr(port.Container)
@@ -127,7 +129,7 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 
 	seedCtx, seedCancel := context.WithTimeout(ctx, cfg.CommandTimeout)
 	defer seedCancel()
-	if err := seedMessage(seedCtx, addr, recipient, body); err != nil {
+	if err := seedMessage(seedCtx, addr, recipient, body, lmtp); err != nil {
 		t.Fatalf("%s: seeding smoke message: %v", p.Name, err)
 	}
 
@@ -135,6 +137,9 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 	defer sinkCancel()
 	got, err := harness.WaitForMessage(sinkCtx, sink, recipient)
 	if err != nil {
+		if logs, logErr := h.Logs(context.Background()); logErr == nil {
+			t.Logf("%s container logs:\n%s", p.Name, logs)
+		}
 		t.Fatalf("%s: reading back the seeded message: %v", p.Name, err)
 	}
 	// Two normalisations account for real, observed server behavior rather
@@ -161,58 +166,32 @@ func normalizeCRLF(b []byte) []byte {
 	return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
 }
 
-// seedMessage delivers body to rcpt using net/smtp — the standard library's
-// own frozen client, not this project's — so the sink side of the harness
-// can be proven independently of the smtpclient command surface T06 does
-// not depend on (T05 owns MAIL/RCPT/DATA).
-//
-// It drives net/smtp.Client directly rather than the smtp.SendMail
-// convenience wrapper, which opportunistically attempts STARTTLS whenever a
-// server advertises it and has no option to skip certificate verification —
-// every self-signed cert in this matrix would otherwise fail the handshake.
-// Seeding stays in cleartext deliberately: it is test fixture setup, not a
-// TLS assertion.
-func seedMessage(ctx context.Context, addr, rcpt string, body []byte) error {
-	type result struct{ err error }
-	done := make(chan result, 1)
-	go func() {
-		done <- result{seedMessageSync(addr, rcpt, body)}
-	}()
-	select {
-	case r := <-done:
-		return r.err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func seedMessageSync(addr, rcpt string, body []byte) error {
-	c, err := smtp.Dial(addr)
+// seedMessage delivers body through the library under test. The matrix uses a
+// plain SMTP port and deliberately avoids opportunistic STARTTLS here: TLS
+// policy is validated separately, while self-signed server certificates would
+// make this byte-transparency smoke test depend on per-profile trust setup.
+func seedMessage(ctx context.Context, addr, rcpt string, body []byte, lmtp bool) error {
+	c, err := smtpclient.Dial(ctx, &smtpclient.ClientOptions{
+		Address:         addr,
+		Identity:        "interop-client.example.test",
+		LMTP:            lmtp,
+		GreetingTimeout: 10 * time.Second,
+		MailTimeout:     10 * time.Second,
+	})
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	if err := c.Hello("go-smtp-interop-seed"); err != nil {
+	if err := c.Mail(ctx, rcpt, nil); err != nil {
 		return err
 	}
-	if err := c.Mail(rcpt); err != nil {
+	if err := c.Rcpt(ctx, rcpt, nil); err != nil {
 		return err
 	}
-	if err := c.Rcpt(rcpt); err != nil {
+	if _, err := c.Data(ctx, bytes.NewReader(body), nil); err != nil {
 		return err
 	}
-	w, err := c.Data()
-	if err != nil {
-		return err
-	}
-	if _, err := w.Write(body); err != nil {
-		_ = w.Close()
-		return err
-	}
-	if err := w.Close(); err != nil {
-		return err
-	}
-	return c.Quit()
+	return c.Quit(ctx, nil)
 }
 
 func logTranscript(t *testing.T, r *harness.Result) {

@@ -1,5 +1,8 @@
-# Stalwart interop target. The image's default bootstrap configuration exposes
-# the SMTP listener and stores mail under /opt/stalwart/data/mail. The profile
-# supplies a deterministic recovery-admin credential for diagnostics; the SMTP
-# smoke transaction itself is deliberately unauthenticated.
-FROM docker.io/stalwartlabs/stalwart
+FROM docker.io/stalwartlabs/mail-server:v0.11.8
+
+COPY config.toml /etc/stalwart/config.toml
+
+EXPOSE 25 143
+
+ENTRYPOINT ["/usr/local/bin/stalwart-mail"]
+CMD ["--config", "/etc/stalwart/config.toml"]

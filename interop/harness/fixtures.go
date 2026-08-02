@@ -29,13 +29,16 @@ type Fixture struct {
 	_ struct{}
 }
 
-func repeatLine(fill byte, length int) []byte {
-	line := make([]byte, length+2)
-	for i := range length {
+func repeatLine(fill byte, wireLength int) []byte {
+	// RFC 5321 §4.5.3.1.6 counts the terminating CRLF in the 1000-octet
+	// text-line limit. Keep the argument in wire octets so the boundary
+	// fixture cannot accidentally describe a 1002-octet line as 1000.
+	line := make([]byte, wireLength)
+	for i := range wireLength - 2 {
 		line[i] = fill
 	}
-	line[length] = '\r'
-	line[length+1] = '\n'
+	line[wireLength-2] = '\r'
+	line[wireLength-1] = '\n'
 	return line
 }
 
@@ -63,6 +66,8 @@ func buildFixtures() []Fixture {
 	lineLimits = append(lineLimits, line1001...)
 
 	eightBit := "Body with 8-bit octets: caf\xc3\xa9, na\xc3\xafve.\r\n"
+	smtpUTF8 := "SMTPUTF8 envelope-path coupling fixture.\r\n"
+	multiRecipient := "Multi-recipient acceptance fixture.\r\n"
 
 	binaryNUL := "Binary body with an embedded NUL:\x00 right there.\r\n"
 
@@ -105,6 +110,17 @@ func buildFixtures() []Fixture {
 			BugClass:          "8BITMIME vs 7-bit downgrade behaviour",
 			Body:              []byte(eightBit),
 			RequiresExtension: "8BITMIME",
+		},
+		{
+			Name:              "smtp-utf8-recipient",
+			BugClass:          "SMTPUTF8 must be requested on MAIL before a UTF-8 RCPT path is sent",
+			Body:              []byte(smtpUTF8),
+			RequiresExtension: "SMTPUTF8",
+		},
+		{
+			Name:     "multi-recipient-one-invalid",
+			BugClass: "pipelined RCPT results must remain associated with the right recipient",
+			Body:     []byte(multiRecipient),
 		},
 		{
 			Name:              "binary-with-nul",

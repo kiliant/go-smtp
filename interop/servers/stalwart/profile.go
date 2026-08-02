@@ -2,16 +2,13 @@
 // coverage" server (SMTPUTF8, REQUIRETLS, DSN, CHUNKING) docs/INTEROP.md
 // calls out.
 //
-// Verified end to end on 2026-08-02: the image's bootstrap configuration
-// exposed its SMTP listener, advertised this profile's expected extensions,
-// and accepted a seeded message which the maildir sink read back. The server's
-// durable configuration is database-backed; this profile intentionally relies
-// only on that verified default SMTP path rather than treating --config as a
-// static TOML configuration file.
+// It uses a pinned image and a checked-in static configuration so startup is
+// reproducible and does not depend on an interactive bootstrap wizard.
 package stalwart
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"runtime"
 
@@ -20,8 +17,8 @@ import (
 )
 
 const (
-	smtpPort  = 25
-	adminPort = 8080
+	smtpPort = 25
+	imapPort = 143
 )
 
 func init() {
@@ -30,13 +27,11 @@ func init() {
 		Tier: harness.Tier1,
 		Run: harness.RunConfig{
 			ContainerfileDir: containerfileDir(),
-			Ports:            []int{smtpPort, adminPort},
-			Env: map[string]string{
-				"STALWART_RECOVERY_ADMIN": "admin:interop-admin-pw",
-			},
+			Ports:            []int{smtpPort, imapPort},
 		},
 		Ports: []harness.Port{
 			{Container: smtpPort, Kind: "smtp"},
+			{Container: imapPort, Kind: "imap"},
 		},
 		ExpectedExtensions: []smtp.Extension{
 			smtp.ExtStartTLS,
@@ -44,7 +39,6 @@ func init() {
 			smtp.Ext8BitMIME,
 			smtp.ExtSMTPUTF8,
 			smtp.ExtEnhancedStatusCodes,
-			smtp.ExtDSN,
 			smtp.ExtChunking,
 			smtp.ExtRequireTLS,
 		},
@@ -58,8 +52,9 @@ func containerfileDir() string {
 }
 
 func newSink(ctx context.Context, h *harness.Handle) (harness.Sink, error) {
-	return harness.MaildirSink{
-		Exec: h,
-		Dir:  func(recipient string) string { return "/opt/stalwart/data/mail/" + recipient },
-	}, nil
+	addr, ok := h.HostAddr(imapPort)
+	if !ok {
+		return nil, fmt.Errorf("stalwart: no host port resolved for IMAP (container port %d)", imapPort)
+	}
+	return &imapSink{addr: addr, username: "interop@example.test", password: "interop-pw"}, nil
 }

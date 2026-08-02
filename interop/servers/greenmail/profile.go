@@ -16,6 +16,7 @@ package greenmail
 import (
 	"context"
 	"fmt"
+	"time"
 
 	smtp "github.com/kiliant/go-smtp"
 	"github.com/kiliant/go-smtp/interop/harness"
@@ -56,10 +57,20 @@ func newSink(ctx context.Context, h *harness.Handle) (harness.Sink, error) {
 	if !ok {
 		return nil, fmt.Errorf("greenmail: no host port resolved for API (container port %d)", httpPort)
 	}
-	if err := harness.WaitTCP(ctx, addr); err != nil {
-		return nil, err
+	s := &sink{baseURL: "http://" + addr}
+	// The JVM opens the API socket before the HTTP handler is ready; a TCP-only
+	// readiness check races with that startup window and produces EOF here.
+	for {
+		var messages []apiMessage
+		if err := harness.GetJSON(ctx, s.messagesURL("interop@example.test"), &messages); err == nil {
+			return s, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("greenmail: API never became ready: %w", ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
-	return &sink{baseURL: "http://" + addr}, nil
 }
 
 type sink struct {
@@ -73,7 +84,7 @@ type apiMessage struct {
 
 func (s *sink) Fetch(ctx context.Context, recipient string) ([]harness.Message, error) {
 	var resp []apiMessage
-	if err := harness.GetJSON(ctx, s.baseURL+"/api/user/"+recipient+"/messages", &resp); err != nil {
+	if err := harness.GetJSON(ctx, s.messagesURL(recipient), &resp); err != nil {
 		return nil, err
 	}
 	msgs := make([]harness.Message, 0, len(resp))
@@ -84,5 +95,9 @@ func (s *sink) Fetch(ctx context.Context, recipient string) ([]harness.Message, 
 }
 
 func (s *sink) Reset(ctx context.Context, recipient string) error {
-	return harness.DeleteURL(ctx, s.baseURL+"/api/user/"+recipient+"/messages")
+	return harness.DeleteURL(ctx, s.messagesURL(recipient))
+}
+
+func (s *sink) messagesURL(recipient string) string {
+	return s.baseURL + "/api/user/" + recipient + "/messages"
 }

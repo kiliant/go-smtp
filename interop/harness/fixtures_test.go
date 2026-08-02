@@ -57,11 +57,11 @@ func TestFixtureLineLengthBoundary(t *testing.T) {
 	if !ok {
 		t.Fatal("fixture missing")
 	}
-	if !bytes.Contains(f.Body, bytes.Repeat([]byte("a"), 1000)) {
-		t.Error("must contain a 1000-octet line")
+	if !bytes.Contains(f.Body, append(bytes.Repeat([]byte("a"), 998), '\r', '\n')) {
+		t.Error("must contain a 1000-octet wire line (998 content octets plus CRLF)")
 	}
-	if !bytes.Contains(f.Body, bytes.Repeat([]byte("b"), 1001)) {
-		t.Error("must contain a 1001-octet line")
+	if !bytes.Contains(f.Body, append(bytes.Repeat([]byte("b"), 999), '\r', '\n')) {
+		t.Error("must contain a 1001-octet wire line (999 content octets plus CRLF)")
 	}
 }
 

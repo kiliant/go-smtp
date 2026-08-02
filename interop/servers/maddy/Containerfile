@@ -1,11 +1,12 @@
 # maddy interop target: an independent Go implementation, a different bug
-# class from the C servers (docs/INTEROP.md). NOT LIVE-VERIFIED this
-# session — see profile.go.
-FROM docker.io/foxcpp/maddy
+# class from the C servers (docs/INTEROP.md). The base image is digest-pinned;
+# entrypoint.sh provisions the interop account before starting the server.
+FROM docker.io/foxcpp/maddy@sha256:9f539c8669502fc4788a057b7afb67cae9c2f4ad7c188aa87fb24f5b031b3edc
+
+RUN apk add --no-cache openssl
 
 COPY maddy.conf /data/maddy.conf
+COPY entrypoint.sh /usr/local/bin/go-smtp-maddy
+RUN chmod 0755 /usr/local/bin/go-smtp-maddy
 
-RUN mkdir -p /certs \
-	&& openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-		-keyout /certs/key.pem -out /certs/cert.pem \
-		-subj "/CN=mail.example.test" || true
+ENTRYPOINT ["/usr/local/bin/go-smtp-maddy"]

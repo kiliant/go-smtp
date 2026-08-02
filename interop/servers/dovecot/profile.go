@@ -6,12 +6,8 @@
 // implicit-TLS LMTP listener on port 31024 and no userdb. The Containerfile
 // adds a plain listener on the conventional port 24 (binding it needs
 // CAP_NET_BIND_SERVICE, since the image runs as the non-root "vmail" user)
-// and a static userdb so any recipient resolves to a maildir under
-// /srv/vmail. Verified running on 2026-08-02.
-//
-// smtpclient does not send LHLO until T07 lands, so this profile's assertion
-// step is a greeting check rather than an EHLO capability check — see
-// harness.AssertProfile.
+// and a static userdb so any recipient resolves under /srv/vmail. Verified
+// running on 2026-08-02.
 package dovecot
 
 import (
@@ -36,8 +32,8 @@ func init() {
 		Ports: []harness.Port{
 			{Container: lmtpPort, Kind: "lmtp"},
 		},
-		// No ExpectedExtensions: LMTP capability assertion is deferred to
-		// T07 (see package doc).
+		// Dovecot's LMTP capabilities vary with its configured plugins. The
+		// harness still performs a real LHLO negotiation when this list is empty.
 		NewSink: newSink,
 	})
 }
@@ -48,10 +44,5 @@ func containerfileDir() string {
 }
 
 func newSink(ctx context.Context, h *harness.Handle) (harness.Sink, error) {
-	return harness.MaildirSink{
-		Exec: h,
-		Dir: func(recipient string) string {
-			return "/srv/vmail/" + recipient + "/mail"
-		},
-	}, nil
+	return dovecotSink{exec: h}, nil
 }

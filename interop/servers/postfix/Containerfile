@@ -1,7 +1,7 @@
 # Postfix interop target: docker.io/boky/postfix with a provisioned virtual
 # mailbox for interop@example.test, so the maildir sink (interop/harness
 # MaildirSink) can read back what the client delivered.
-FROM docker.io/boky/postfix
+FROM docker.io/boky/postfix@sha256:793418bea54f42ee119fd72ce39c46b5a5766e475c775d46f4d90e8edae10e6f
 
 RUN groupadd -g 5000 vmail \
 	&& useradd -u 5000 -g vmail -d /var/mail/vhosts -m -s /usr/sbin/nologin vmail \

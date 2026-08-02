@@ -34,7 +34,7 @@ func init() {
 		Name: "mailpit",
 		Tier: harness.Tier1,
 		Run: harness.RunConfig{
-			Image: "docker.io/axllent/mailpit",
+			Image: "docker.io/axllent/mailpit@sha256:e427cc84ef7b68b656a80093f677767d5eafdde67ec871238a670f0bd4d89ad2",
 			Ports: []int{smtpPort, httpPort},
 		},
 		Ports: []harness.Port{

@@ -52,11 +52,8 @@ func WaitForEHLO(ctx context.Context, addr string, opts *smtpclient.ClientOption
 // profile lists; it is a health check for the matrix, not a general
 // capability probe.
 //
-// A profile whose only port is "lmtp" cannot be capability-asserted this way
-// yet: smtpclient does not send LHLO until T07 lands (T06 depends only on
-// T03). For those, AssertProfile falls back to GreetingCheck — proving the
-// container is up and speaking SMTP/LMTP at all — and records why in the
-// transcript rather than silently skipping the stronger check.
+// LMTP profiles are negotiated with smtpclient in LMTP mode, so the health
+// gate proves a real LHLO exchange rather than merely observing a greeting.
 func AssertProfile(ctx context.Context, cfg Config, h *Handle, p Profile) *Result {
 	if port, ok := p.SMTPPort(); ok {
 		return assertSMTPProfile(ctx, cfg, h, p, port)
@@ -121,19 +118,33 @@ func assertLMTPGreeting(ctx context.Context, cfg Config, h *Handle, p Profile, p
 	}
 	tr := NewTranscript()
 	tr.Recordf("dialing %s (container port %d, kind lmtp)", addr, port.Container)
-	tr.Recordf("LMTP capability assertion deferred: smtpclient sends LHLO only from T07, and T06 depends on T03 alone")
-
 	healthCtx, cancel := context.WithTimeout(ctx, cfg.HealthTimeout)
 	defer cancel()
-	if err := GreetingCheck(healthCtx, addr); err != nil {
+	client, err := WaitForEHLO(healthCtx, addr, &smtpclient.ClientOptions{
+		LMTP:            true,
+		GreetingTimeout: cfg.CommandTimeout,
+		MailTimeout:     cfg.CommandTimeout,
+	})
+	if err != nil {
 		outcome := OutcomeEnvironmental
 		if errors.Is(err, context.DeadlineExceeded) {
 			outcome = OutcomeTimeout
 		}
-		tr.Recordf("greeting check failed: %v", err)
+		tr.Recordf("LHLO negotiation failed: %v", err)
 		return NewResult(p.Name, "assert-profile", outcome, err, tr)
 	}
-	tr.Recordf("received a 220 greeting")
+	defer func() { _ = client.Close() }()
+	tr.Recordf("LHLO negotiation succeeded")
+	var missing []string
+	for _, ext := range p.ExpectedExtensions {
+		if _, ok := client.Extension(ext); !ok {
+			missing = append(missing, string(ext))
+		}
+	}
+	if len(missing) > 0 {
+		return NewResult(p.Name, "assert-profile", OutcomeProfileViolation,
+			fmt.Errorf("server did not advertise claimed extension(s) %v", missing), tr)
+	}
 	return NewResult(p.Name, "assert-profile", OutcomeOK, nil, tr)
 }
 
