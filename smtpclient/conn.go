@@ -28,7 +28,12 @@ type connection struct {
 	raw    net.Conn
 	reader *smtpwire.LineReader
 	state  sessionState
-	ext    map[string]string
+	// transactionBase is the reusable session state captured when MAIL opens a
+	// transaction. Transaction commands restore it after RSET or a completed
+	// DATA exchange, preserving whether the session is TLS-protected and/or
+	// authenticated without expanding the public state model.
+	transactionBase sessionState
+	ext             map[string]string
 	// recipients holds the accepted RCPT forward paths for the active SMTP
 	// transaction. Transaction commands maintain it while holding mu; it is
 	// intentionally connection state so DATA can produce the stable
