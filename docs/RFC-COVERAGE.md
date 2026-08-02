@@ -31,7 +31,7 @@ No row is `verified` yet and none can be until the T06 interop matrix exists.
 | PIPELINING | 2920 | T03 | done |
 | ENHANCEDSTATUSCODES | 2034 | T01,T02,T03 | done [^esc] |
 | AUTH | 4954 | T04 | planned |
-| LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | planned [^lmtp] |
+| LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | done [^lmtp] |
 
 [^vrfy]: The IANA registry cites `draft-ietf-emailcore-rfc5321bis` for `VRFY`.
     That draft is at revision 44, sits in the RFC Editor queue in state
@@ -68,12 +68,12 @@ The extensions that change how message content itself is transmitted.
 
 | Capability | RFC | Status |
 |---|---|---|
-| SIZE | 1870 | planned |
-| 8BITMIME | 6152 | planned |
-| SMTPUTF8 | 6531 | planned |
-| CHUNKING | 3030 | planned |
-| BINARYMIME | 3030 | planned |
-| UTF8SMTP | 5336 | planned [^utf8smtp] |
+| SIZE | 1870 | done |
+| 8BITMIME | 6152 | done |
+| SMTPUTF8 | 6531 | done |
+| CHUNKING | 3030 | done |
+| BINARYMIME | 3030 | done |
+| UTF8SMTP | 5336 | done [^utf8smtp] |
 
 [^utf8smtp]: Obsoleted by RFC 6531. Recognised on the wire for compatibility
     with servers still advertising it; never *sent* as a preference. Do not
@@ -85,14 +85,14 @@ Extensions that add `MAIL`/`RCPT` parameters influencing handling.
 
 | Capability | RFC | Status |
 |---|---|---|
-| DSN | 3461 | planned |
-| DELIVERBY | 2852 | planned |
-| FUTURERELEASE | 4865 | planned |
-| MT-PRIORITY | 6710 | planned |
-| RRVS | 7293 | planned |
-| REQUIRETLS | 8689 | planned |
-| LIMITS | 9422 | planned |
-| BURL | 4468 | planned |
+| DSN | 3461 | done |
+| DELIVERBY | 2852 | done |
+| FUTURERELEASE | 4865 | done |
+| MT-PRIORITY | 6710 | done |
+| RRVS | 7293 | done |
+| REQUIRETLS | 8689 | done |
+| LIMITS | 9422 | done |
+| BURL | 4468 | done |
 
 ## Group C — legacy & niche (task T10)
 
@@ -101,13 +101,13 @@ client; full command support is best-effort. Several will stay `deferred`.
 
 | Capability | RFC | Status | Note |
 |---|---|---|---|
-| ETRN | 1985 | planned | queue-start command |
-| ATRN | 2645 | planned | authenticated TURN, ODMR |
-| NO-SOLICITING | 3865 | planned | `SOLICIT=` parameter |
-| MTRK | 3885 | planned | `TRANSID=` parameter |
-| SUBMITTER | 4405 | planned | `SUBMITTER=` parameter |
-| CONPERM | 4141 | planned | content conversion permission |
-| CONNEG | 4141 | planned | content negotiation |
+| ETRN | 1985 | done | queue-start command |
+| ATRN | 2645 | done | authenticated TURN, ODMR |
+| NO-SOLICITING | 3865 | done | `SOLICIT=` parameter |
+| MTRK | 3885 | done | `TRANSID=` parameter |
+| SUBMITTER | 4405 | done | `SUBMITTER=` parameter |
+| CONPERM | 4141 | done | content conversion permission |
+| CONNEG | 4141 | done | content negotiation |
 | CHECKPOINT | 1845 | deferred | no known server support |
 | VERB | — | deferred | Eric Allman, non-RFC; sendmail verbose mode |
 | ONEX | — | deferred | Eric Allman, non-RFC; one-transaction-only |
