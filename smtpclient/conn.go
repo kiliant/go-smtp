@@ -23,14 +23,19 @@ const (
 )
 
 type connection struct {
-	mu       sync.Mutex // protects state, extensions, raw and reader
-	opMu     sync.Mutex // makes every pipeline group atomic to a Client caller
-	raw      net.Conn
-	reader   *smtpwire.LineReader
-	state    sessionState
-	ext      map[string]string
-	options  ClientOptions
-	pipeline pipeline
+	mu     sync.Mutex // protects state, extensions, raw and reader
+	opMu   sync.Mutex // makes every pipeline group atomic to a Client caller
+	raw    net.Conn
+	reader *smtpwire.LineReader
+	state  sessionState
+	ext    map[string]string
+	// recipients holds the accepted RCPT forward paths for the active SMTP
+	// transaction. Transaction commands maintain it while holding mu; it is
+	// intentionally connection state so DATA can produce the stable
+	// per-recipient result shape without exposing protocol internals.
+	recipients []string
+	options    ClientOptions
+	pipeline   pipeline
 }
 
 // Dial connects to opts.Address, reads the greeting, and negotiates ESMTP.
