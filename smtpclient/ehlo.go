@@ -73,12 +73,6 @@ func (c *Client) ehloLocked(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) helo(ctx context.Context) error {
-	c.conn.opMu.Lock()
-	defer c.conn.opMu.Unlock()
-	return c.heloLocked(ctx)
-}
-
 func (c *Client) heloLocked(ctx context.Context) error {
 	replies, err := c.conn.pipeline.executeLocked(ctx, []queuedCommand{{
 		verb: "HELO", args: []string{c.conn.identity()}, syncPoint: true, timeout: c.conn.mailTimeout(),
