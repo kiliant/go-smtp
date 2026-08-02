@@ -14,9 +14,9 @@ keyword is missing here, check the registry, then add it.
 Status: `planned` → `in progress` → `done` → `verified` (exercised against at
 least two independent servers in the interop matrix).
 
-M0 (T01 wire codec, T02 core types) has landed; the rows carrying those task
-IDs are updated below. Everything from T03 onward is still `planned`. No row is
-`verified` yet and none can be until the T06 interop matrix exists.
+M0 (T01 wire codec, T02 core types) and T03 (connection, EHLO, TLS and
+pipelining) have landed; the rows carrying those task IDs are updated below.
+No row is `verified` yet and none can be until the T06 interop matrix exists.
 
 ## Base — RFC 5321 core and the session extensions
 
@@ -26,10 +26,10 @@ IDs are updated below. Everything from T03 onward is still `planned`. No row is
 | VRFY | 5321 | T05 | planned [^vrfy] |
 | EXPN | 5321 | T05 | planned |
 | HELP | 5321 | T05 | planned |
-| Message Submission | 6409 | T03 | planned |
-| STARTTLS | 3207 | T03 | planned |
-| PIPELINING | 2920 | T03 | planned |
-| ENHANCEDSTATUSCODES | 2034 | T01,T02 | in progress [^esc] |
+| Message Submission | 6409 | T03 | in progress [^submission] |
+| STARTTLS | 3207 | T03 | done |
+| PIPELINING | 2920 | T03 | done |
+| ENHANCEDSTATUSCODES | 2034 | T01,T02,T03 | done [^esc] |
 | AUTH | 4954 | T04 | planned |
 | LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | planned [^lmtp] |
 
@@ -43,18 +43,24 @@ IDs are updated below. Everything from T03 onward is still `planned`. No row is
     retrofitted. The shape itself — `smtp.DataResult` as a per-recipient
     collection — landed with T02.
 
-[^core]: T01 and T02 have landed: reply framing, EHLO parsing, command and
-    esmtp-param encoding, and the core types every command signature is written
-    in. No command is *issued* yet — that is T03 (session) and T05
-    (transaction), both still `planned`.
+[^core]: T01 through T03 have landed reply framing, EHLO parsing, command and
+    esmtp-param encoding, the shared core types, connection establishment,
+    greeting/EHLO negotiation and orderly shutdown. T05 still owns the mail
+    transaction commands, so the full SMTP core remains `in progress`.
+
+[^submission]: T03 supplies cleartext, STARTTLS and implicit-TLS connection
+    entry points suitable for submission endpoints. Authentication and message
+    submission commands land with T04 and T05, so end-to-end submission remains
+    `in progress`.
 
 [^esc]: The RFC 3463 structure (`smtp.EnhancedCode`) and the syntactic
     extraction of a leading `class.subject.detail` from reply text
     (`smtpwire.ExtractEnhancedCode`) both landed with T01/T02, including the
     §1c requirement that an unparseable code survive verbatim in `Raw`.
-    Extraction is deliberately unconditional at the wire layer; *gating* it on
-    the server having advertised `ENHANCEDSTATUSCODES` is session policy and
-    lands with T03's EHLO negotiation.
+    Extraction is deliberately unconditional at the wire layer. T03's session
+    layer gates semantic extraction on the server having advertised
+    `ENHANCEDSTATUSCODES`; greeting and EHLO failures remain ungated because no
+    extension list has been negotiated yet.
 
 ## Group A — transport core (task T08)
 
@@ -119,6 +125,7 @@ the extension accessor. Deferred means "we do not implement the command", never
 | Item | RFC | Task | Status | Note |
 |---|---|---|---|---|
 | ESMTP extension mechanism (historical) | 1869 | T01,T02 | done [^esmtp] | origin of the EHLO extension framework |
+| Implicit TLS for submission | 8314 | T03 | done | TLS handshake precedes the server greeting, conventionally on port 465 |
 | xtext encoding | 3461 §4 | T01,T02 | done | required for `ENVID=`, `ORCPT=`, `AUTH=`; exported as `smtp.EncodeXtext` [^xtext] |
 | Enhanced status code structure | 3463 | T02 | done | `class.subject.detail`; unparseable codes survive in `Raw` |
 | Enhanced status code registry | 5248 | T02 | done | grows independently; codes stay open — never switched on exhaustively |

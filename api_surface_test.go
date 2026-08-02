@@ -53,7 +53,8 @@ var optionsExemptClientMethods = map[string]bool{}
 // gate in this file — adding a wire-writing method here silences both gates
 // at once.
 var nonBlockingClientMethods = map[string]bool{
-	"Close": true,
+	"Close":     true,
+	"Extension": true,
 }
 
 // internalPackageSuffixes are the internal/ import paths that must never
