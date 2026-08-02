@@ -36,6 +36,26 @@ the remedy backwards is the failure this task exists to prevent.
   3463 defines the structure, RFC 5248 the registry; cite both in the doc
   comment. An unparseable code keeps `Raw` and must not be flattened.
 
+### `MailOptions` and `RcptOptions` (`options.go`)
+
+The transaction options structs live **here**, in the root package, not in
+`smtpclient` — T08 and T09 both add typed fields to them and neither owns the
+root package, so this is where the shared surface has to be.
+
+Each carries typed fields for what is modelled plus **`Extra []Param`** from the
+first commit. `Extra` is the §1b escape hatch: a caller needing a parameter this
+library has not implemented yet must still be able to send it, and that door
+cannot be added retroactively without every intervening caller having been stuck.
+
+Ship them now even though `smtpclient` does not exist yet and both structs are
+nearly empty. That is rule 3 operating exactly as intended — a command entry
+point that ships without its options struct cannot gain one without breaking
+every call site, so the struct must precede the method that takes it.
+
+T08 and T09 add typed fields (`Size`, `Body`, `RequireTLS`, `Notify`, `ORCPT`,
+…). Do not attempt to model those here; define the structs, the `Extra` field,
+and the keyed-literal contract.
+
 ### The error type (`error.go`)
 
 One type, per `API-STABILITY.md` §5: reply code, enhanced code, text, the
