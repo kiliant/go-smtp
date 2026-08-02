@@ -108,8 +108,9 @@ type DeliveryOptions struct {
 //
 // Callers constructing a RecipientDeliveryOptions literal must use keyed fields.
 type RecipientDeliveryOptions struct {
-	DSN *DSNRcptOptions
-	_   struct{}
+	DSN  *DSNRcptOptions
+	RRVS *RRVSOptions
+	_    struct{}
 }
 
 // DSNMailOptions configures DSN sender parameters.
