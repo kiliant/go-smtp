@@ -127,7 +127,12 @@ func Run(ctx context.Context, cfg RunConfig) (*Handle, error) {
 var portLinePattern = regexp.MustCompile(`:(\d+)\s*$`)
 
 // resolvePorts queries "podman port" for each requested container port and
-// records the host port podman actually assigned.
+// records the host port podman actually assigned. "podman port" can print
+// more than one mapping line for a single container port (e.g. separate
+// IPv4/IPv6 bindings), so each line is parsed independently and only the
+// first is used, rather than matching the port pattern against the whole
+// (possibly multi-line) output — which would silently anchor to the last
+// line only, regardless of which address it belonged to.
 func (h *Handle) resolvePorts(ctx context.Context, containerPorts []int) (map[int]int, error) {
 	out := make(map[int]int, len(containerPorts))
 	for _, cp := range containerPorts {
@@ -135,7 +140,11 @@ func (h *Handle) resolvePorts(ctx context.Context, containerPorts []int) (map[in
 		if err != nil {
 			return nil, fmt.Errorf("harness: podman port %s %d: %w: %s", h.Name, cp, err, strings.TrimSpace(stderr))
 		}
-		line := strings.TrimSpace(stdout)
+		lines := strings.Split(strings.TrimSpace(stdout), "\n")
+		if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
+			return nil, fmt.Errorf("harness: no port mapping printed for %s port %d", h.Name, cp)
+		}
+		line := strings.TrimSpace(lines[0])
 		m := portLinePattern.FindStringSubmatch(line)
 		if m == nil {
 			return nil, fmt.Errorf("harness: could not parse host port from %q", line)

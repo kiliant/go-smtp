@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,9 +58,27 @@ func getBody(ctx context.Context, url string) (io.ReadCloser, error) {
 
 // DeleteURL issues a DELETE to url and discards the response body.
 func DeleteURL(ctx context.Context, url string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	return doDelete(ctx, url, nil)
+}
+
+// DeleteJSON issues a DELETE to url with body JSON-encoded as the request
+// body, for an API (e.g. Mailpit) whose bulk-delete endpoint scopes to a
+// specific set of IDs only when given one, and deletes everything otherwise.
+func DeleteJSON(ctx context.Context, url string, body any) error {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("harness: encoding DELETE body for %s: %w", url, err)
+	}
+	return doDelete(ctx, url, bytes.NewReader(encoded))
+}
+
+func doDelete(ctx context.Context, url string, body io.Reader) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, body)
 	if err != nil {
 		return fmt.Errorf("harness: building DELETE for %s: %w", url, err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

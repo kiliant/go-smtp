@@ -87,6 +87,37 @@ func TestMaildirSinkFetchEmpty(t *testing.T) {
 	}
 }
 
+func TestMaildirSinkFetchDeterministicOrder(t *testing.T) {
+	exec := &fakeExecer{
+		files: map[string][]byte{
+			"/mail/a/cur/1785678065.z": []byte("third"),
+			"/mail/a/new/1785678063.x": []byte("first"),
+			"/mail/a/new/1785678064.y": []byte("second"),
+		},
+		dirs: map[string][]string{
+			"/mail/a/new": {"1785678064.y", "1785678063.x"}, // deliberately out of order
+			"/mail/a/cur": {"1785678065.z"},
+		},
+	}
+	sink := MaildirSink{Exec: exec, Dir: func(recipient string) string { return "/mail/a" }}
+
+	for i := range 5 {
+		msgs, err := sink.Fetch(context.Background(), "a@example.test")
+		if err != nil {
+			t.Fatalf("Fetch iteration %d: %v", i, err)
+		}
+		if len(msgs) != 3 {
+			t.Fatalf("iteration %d: got %d messages, want 3", i, len(msgs))
+		}
+		want := []string{"first", "second", "third"}
+		for j, w := range want {
+			if string(msgs[j].Raw) != w {
+				t.Fatalf("iteration %d: msgs[%d] = %q, want %q (order must be deterministic by filename)", i, j, msgs[j].Raw, w)
+			}
+		}
+	}
+}
+
 func TestMaildirSinkReset(t *testing.T) {
 	exec := &fakeExecer{
 		files: map[string][]byte{"/mail/a/new/1": []byte("x")},

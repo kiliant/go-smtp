@@ -88,6 +88,24 @@ func (s *sink) Fetch(ctx context.Context, recipient string) ([]harness.Message, 
 	return msgs, nil
 }
 
+// Reset deletes only the messages currently matching recipient, by ID.
+// Mailpit's bulk-delete endpoint deletes the entire inbox when given no
+// body, which would silently wipe another recipient's or scenario's mail
+// mid-run — every call here must pass an explicit ID list.
 func (s *sink) Reset(ctx context.Context, recipient string) error {
-	return harness.DeleteURL(ctx, s.baseURL+"/api/v1/messages")
+	query := url.QueryEscape("to:" + recipient)
+	var resp searchResponse
+	if err := harness.GetJSON(ctx, s.baseURL+"/api/v1/search?query="+query, &resp); err != nil {
+		return err
+	}
+	if len(resp.Messages) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(resp.Messages))
+	for _, m := range resp.Messages {
+		ids = append(ids, m.ID)
+	}
+	return harness.DeleteJSON(ctx, s.baseURL+"/api/v1/messages", struct {
+		IDs []string `json:"IDs"`
+	}{IDs: ids})
 }
