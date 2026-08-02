@@ -89,15 +89,15 @@ func (c *Client) Data(ctx context.Context, r io.Reader, opts *DataOptions) (smtp
 	if err != nil {
 		return nil, err
 	}
-	if reply.Code < 200 || reply.Code >= 600 {
-		return nil, unexpectedReply("DATA", reply, c.conn.enhancedStatusCodes(), 250)
-	}
 	c.conn.mu.Lock()
 	if c.conn.state != stateClosed {
 		c.conn.state = c.conn.transactionBase
 		c.conn.recipients = nil
 	}
 	c.conn.mu.Unlock()
+	if err := unexpectedReply("DATA", reply, c.conn.enhancedStatusCodes(), 250); err != nil {
+		return nil, err
+	}
 	result := make(smtp.DataResult, len(recipients))
 	for i, recipient := range recipients {
 		errReply := replyError("DATA", reply, c.conn.enhancedStatusCodes())
