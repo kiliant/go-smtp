@@ -295,7 +295,12 @@ func (lr *LineReader) ReadReply(deadline time.Time, limits Limits) (Reply, error
 		totalSize int
 	)
 	for lineIdx := 0; ; lineIdx++ {
-		raw, err := lr.readLine(limits.MaxReplyLineLength)
+		// MaxReplyLineLength is a limit on reply *text*, not on the three
+		// code bytes, separator, or CRLF framing. Allow precisely enough
+		// room for that framing while still bounding allocation before it
+		// grows. A CRLF line has five non-text bytes before readLine removes
+		// the LF (three code bytes, a separator, and CR).
+		raw, err := lr.readLine(limits.MaxReplyLineLength + 5)
 		if err != nil {
 			if errors.Is(err, io.EOF) && lineIdx > 0 {
 				// A continuation was promised; running out of bytes now is
@@ -307,6 +312,9 @@ func (lr *LineReader) ReadReply(deadline time.Time, limits Limits) (Reply, error
 		lineCode, cont, text, err := parseReplyLine(raw)
 		if err != nil {
 			return Reply{}, err
+		}
+		if len(text) > limits.MaxReplyLineLength {
+			return Reply{}, ErrReplyLineTooLong
 		}
 		if !haveCode {
 			code = lineCode

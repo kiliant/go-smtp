@@ -135,6 +135,27 @@ func TestReadReplyLineTooLong(t *testing.T) {
 	}
 }
 
+func TestReadReplyLineLimitAppliesToTextNotFraming(t *testing.T) {
+	// The configured limit is explicitly for the text portion. RFC reply
+	// framing must not steal bytes from it, and one byte beyond it must fail.
+	for _, tc := range []struct {
+		name string
+		text string
+		want error
+	}{
+		{name: "exact limit", text: strings.Repeat("x", 10)},
+		{name: "one over", text: strings.Repeat("x", 11), want: ErrReplyLineTooLong},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lr := NewLineReader(strings.NewReader("250 " + tc.text + "\r\n"))
+			_, err := lr.ReadReply(time.Time{}, Limits{MaxReplyLineLength: 10})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("ReadReply error = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestReadReplyTooManyLines(t *testing.T) {
 	input := "250-a\r\n250-b\r\n250-c\r\n250 d\r\n"
 	lr := NewLineReader(strings.NewReader(input))
