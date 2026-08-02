@@ -13,6 +13,13 @@ package smtp
 // Constructing an Extension from a keyword this library does not (yet) name
 // is valid and expected: Extension("SOME-FUTURE-EXTENSION") is exactly how
 // an unrecognised keyword is preserved and compared.
+//
+// Case: EHLO keywords are case-insensitive on the wire (RFC 5321 §4.1.1.1),
+// and every Extension this library produces from a server reply is
+// upper-cased. Comparison is plain ==, so an Extension a caller builds by
+// hand must be upper case too — Extension("size") does not equal ExtSize.
+// Upper-case the keyword at construction rather than comparing case-
+// insensitively at each use.
 type Extension string
 
 // Base RFC 5321 session extensions.
@@ -31,8 +38,8 @@ const (
 const (
 	// ExtSize is SIZE (RFC 1870).
 	ExtSize Extension = "SIZE"
-	// Ext8BitMIME is 8BITMIME (RFC 6152; widely miscited as RFC 1652, the
-	// RFC 6152 obsoletes).
+	// Ext8BitMIME is 8BITMIME (RFC 6152). Widely miscited as RFC 1652,
+	// which RFC 6152 obsoletes.
 	Ext8BitMIME Extension = "8BITMIME"
 	// ExtSMTPUTF8 is SMTPUTF8 (RFC 6531).
 	ExtSMTPUTF8 Extension = "SMTPUTF8"

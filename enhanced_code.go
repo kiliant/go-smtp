@@ -20,6 +20,12 @@ import (
 // unparseable input keeps Raw with Class, Subject and Detail all zero,
 // rather than collapsing to a sentinel "unknown" value.
 //
+// Match on the numeric fields, not with ==. EnhancedCode is comparable and
+// Raw participates in equality, so a parsed 5.7.1 does not equal
+// EnhancedCode{Class: 5, Subject: 7, Detail: 1} — the parsed value carries
+// Raw: "5.7.1" and the constructed one does not. Compare Class, Subject and
+// Detail directly.
+//
 // Callers constructing an EnhancedCode literal must use keyed fields.
 type EnhancedCode struct {
 	// Class is the first digit: 2 (success), 4 (persistent transient
@@ -50,6 +56,15 @@ type EnhancedCode struct {
 // full reply line — deciding where the code ends and the free-text portion
 // begins — is internal/smtpwire's job (T01), not this function's; callers
 // pass ParseEnhancedCode the already-isolated code substring.
+//
+// This function is deliberately more permissive than that extractor: it
+// accepts any three dot-separated non-negative integers, so "9.99999.0"
+// parses, where the wire-side extractor enforces RFC 3463's class 2/4/5 and
+// 1*3DIGIT segments before it will treat a token as a code at all. The
+// asymmetry is intentional — the extractor decides *whether these bytes are
+// a code*, and must be strict or it will eat the reply text; this function
+// is handed something already identified as one, and preserving it beats
+// second-guessing it.
 func ParseEnhancedCode(raw string) EnhancedCode {
 	c := EnhancedCode{Raw: raw}
 
@@ -100,9 +115,17 @@ func (c EnhancedCode) Valid() bool {
 // String returns Raw when set, since that is the code exactly as the server
 // sent it; otherwise it formats Class.Subject.Detail, for an EnhancedCode a
 // caller constructed directly rather than parsed.
+//
+// The zero EnhancedCode formats as the empty string, not "0.0.0": a zero
+// value means the reply carried no enhanced code at all, and printing a
+// syntactically valid-looking code for its absence is worse than printing
+// nothing.
 func (c EnhancedCode) String() string {
 	if c.Raw != "" {
 		return c.Raw
+	}
+	if c.Class == 0 && c.Subject == 0 && c.Detail == 0 {
+		return ""
 	}
 	return strconv.Itoa(c.Class) + "." + strconv.Itoa(c.Subject) + "." + strconv.Itoa(c.Detail)
 }

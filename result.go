@@ -33,6 +33,12 @@ func (r RecipientResult) Accepted() bool { return r.Code >= 200 && r.Code < 300 
 
 // Err returns this recipient's reply as an *Error, or nil when Accepted
 // reports true.
+//
+// It returns the concrete *Error rather than error so callers can reach Code
+// and Enhanced without errors.As. The usual typed-nil hazard applies: assign
+// the result to an error variable and a nil *Error becomes a non-nil error
+// interface. Test it as *Error — if err := r.Err(); err != nil — or use
+// Accepted.
 func (r RecipientResult) Err() *Error {
 	if r.Accepted() {
 		return nil

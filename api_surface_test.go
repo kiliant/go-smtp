@@ -184,13 +184,24 @@ func TestAPISurfaceGateLogic(t *testing.T) {
 
 	good := parse("good.go", `package smtpclient
 
-import "context"
+import (
+	"context"
+
+	"github.com/kiliant/go-smtp"
+)
 
 type Client struct{}
 
 type FooOptions struct{}
 
 func (c *Client) Foo(ctx context.Context, opts *FooOptions) error { return nil }
+
+// Mail is the shape that actually occurs in the real tree and the one an
+// earlier version of hasOptionsParam could not see: MailOptions lives in the
+// ROOT package by design, so from smtpclient it can only ever be written
+// with a package qualifier. Keep this case — without it the gate passes its
+// own self-test while reporting a violation for every correct method.
+func (c *Client) Mail(ctx context.Context, from string, opts *smtp.MailOptions) error { return nil }
 
 func (c *Client) Close() error { return nil }
 `)
@@ -255,8 +266,10 @@ type Thing struct {
 	Name string
 }
 `)
-	if v := keyedLiteralViolations(map[string]*ast.File{"undoc.go": undocumented}); len(v) != 1 {
-		t.Errorf("keyedLiteralViolations(undocumented) = %v, want exactly 1", v)
+	// Neither the doc note nor the guard: both halves of §7 are reported,
+	// so a struct missing both gets two findings rather than one.
+	if v := keyedLiteralViolations(map[string]*ast.File{"undoc.go": undocumented}); len(v) != 2 {
+		t.Errorf("keyedLiteralViolations(undocumented) = %v, want exactly 2 (missing doc note and missing _ struct{} guard)", v)
 	}
 
 	documented := parse("doc.go", `package smtpclient
@@ -264,10 +277,50 @@ type Thing struct {
 // Thing is constructed by callers with keyed fields.
 type Thing struct {
 	Name string
+
+	_ struct{}
 }
 `)
 	if v := keyedLiteralViolations(map[string]*ast.File{"doc.go": documented}); len(v) != 0 {
 		t.Errorf("keyedLiteralViolations(documented) = %v, want none", v)
+	}
+
+	// The note without the guard: advice a caller can ignore, and the
+	// unkeyed literal still compiles. §7 wants both.
+	unguarded := parse("unguarded.go", `package smtpclient
+
+// Thing is constructed by callers with keyed fields.
+type Thing struct {
+	Name string
+}
+`)
+	if v := keyedLiteralViolations(map[string]*ast.File{"unguarded.go": unguarded}); len(v) != 1 {
+		t.Errorf("keyedLiteralViolations(unguarded) = %v, want exactly 1 (missing _ struct{} guard)", v)
+	}
+
+	// §6 beyond struct fields: a named function type republishing an
+	// internal type is an opaque handle, and T03's dial hook is exactly
+	// that shape. An alias is the same leak by a shorter route.
+	leakyType := parse("leakytype.go", `package smtpclient
+
+import "github.com/kiliant/go-smtp/internal/smtpwire"
+
+type ReplyHook func(*smtpwire.Reply)
+
+type Reply = smtpwire.Reply
+`)
+	if v := internalLeakViolations(fset, map[string]*ast.File{"leakytype.go": leakyType}); len(v) != 2 {
+		t.Errorf("internalLeakViolations(leakyType) = %v, want exactly 2 (named func type and alias)", v)
+	}
+
+	leakyVar := parse("leakyvar.go", `package smtpclient
+
+import "github.com/kiliant/go-smtp/internal/smtpwire"
+
+var DefaultLimits smtpwire.Limits
+`)
+	if v := internalLeakViolations(fset, map[string]*ast.File{"leakyvar.go": leakyVar}); len(v) != 1 {
+		t.Errorf("internalLeakViolations(leakyVar) = %v, want exactly 1", v)
 	}
 
 	unexported := parse("unexported.go", `package smtpclient
@@ -389,7 +442,21 @@ func contextFirstViolations(fset *token.FileSet, files map[string]*ast.File) []s
 }
 
 // hasOptionsParam reports whether params contains a parameter typed as a
-// pointer to an identifier ending in "Options".
+// pointer to a type whose name ends in "Options", whether that type is
+// named locally (*ClientOptions) or through a package qualifier
+// (*smtp.MailOptions).
+//
+// The qualified form is not an edge case, it is the common one: T02 placed
+// MailOptions and RcptOptions in the ROOT package deliberately, because T08
+// and T09 both add typed fields to them and neither owns smtpclient. So from
+// inside smtpclient those parameters can only ever be spelled
+// *smtp.MailOptions — an *ast.SelectorExpr under the star, never an
+// *ast.Ident. A version of this function that unwrapped only *ast.Ident
+// reported a violation for every correctly written command entry point, and
+// the documented remedy for a violation is an optionsExemptClientMethods
+// entry. That is precisely the go-imap failure this gate exists to prevent,
+// so the SelectorExpr case is load-bearing and TestAPISurfaceGateLogic pins
+// it.
 func hasOptionsParam(params *ast.FieldList) bool {
 	if params == nil {
 		return false
@@ -399,15 +466,24 @@ func hasOptionsParam(params *ast.FieldList) bool {
 		if !ok {
 			continue
 		}
-		ident, ok := star.X.(*ast.Ident)
-		if !ok {
-			continue
-		}
-		if strings.HasSuffix(ident.Name, "Options") {
+		if strings.HasSuffix(optionsTypeName(star.X), "Options") {
 			return true
 		}
 	}
 	return false
+}
+
+// optionsTypeName returns the type name from either an unqualified
+// identifier or a package-qualified selector, and "" for anything else.
+func optionsTypeName(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return t.Sel.Name
+	default:
+		return ""
+	}
 }
 
 func optionsStructViolations(fset *token.FileSet, files map[string]*ast.File) []string {
@@ -501,24 +577,50 @@ func internalLeakViolations(fset *token.FileSet, files map[string]*ast.File) []s
 					}
 				}
 			case *ast.GenDecl:
-				if d.Tok != token.TYPE {
-					continue
-				}
-				for _, spec := range d.Specs {
-					ts, ok := spec.(*ast.TypeSpec)
-					if !ok || !ast.IsExported(ts.Name.Name) {
-						continue
-					}
-					st, ok := ts.Type.(*ast.StructType)
-					if !ok || st.Fields == nil {
-						continue
-					}
-					where := "type " + ts.Name.Name
-					for _, field := range st.Fields.List {
-						if !fieldExported(field) {
+				switch d.Tok {
+				case token.TYPE:
+					for _, spec := range d.Specs {
+						ts, ok := spec.(*ast.TypeSpec)
+						if !ok || !ast.IsExported(ts.Name.Name) {
 							continue
 						}
-						walkForInternalLeak(fset, path, where, field.Type, imports, &out)
+						where := "type " + ts.Name.Name
+						if st, ok := ts.Type.(*ast.StructType); ok && st.Fields != nil {
+							// For a struct only the exported fields are
+							// surface; an unexported field holding an
+							// internal type is fine and is how the client
+							// is expected to hold its codec.
+							for _, field := range st.Fields.List {
+								if !fieldExported(field) {
+									continue
+								}
+								walkForInternalLeak(fset, path, where, field.Type, imports, &out)
+							}
+							continue
+						}
+						// Any other exported type publishes its whole
+						// definition. §6 forbids an internal type "not as a
+						// parameter, return value, embedded field, or
+						// opaque handle" — and a named function type is an
+						// opaque handle, which matters because T03 ships a
+						// dial hook. Covers aliases too: a
+						// "type Reply = smtpwire.Reply" would republish the
+						// codec under a public name and permanently freeze
+						// it.
+						walkForInternalLeak(fset, path, where, ts.Type, imports, &out)
+					}
+				case token.VAR, token.CONST:
+					for _, spec := range d.Specs {
+						vs, ok := spec.(*ast.ValueSpec)
+						if !ok || vs.Type == nil {
+							continue
+						}
+						for _, n := range vs.Names {
+							if !ast.IsExported(n.Name) {
+								continue
+							}
+							walkForInternalLeak(fset, path, d.Tok.String()+" "+n.Name, vs.Type, imports, &out)
+						}
 					}
 				}
 			}
@@ -536,6 +638,24 @@ func fieldExported(f *ast.Field) bool {
 	}
 	for _, n := range f.Names {
 		if ast.IsExported(n.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+// structHasBlankGuard reports whether st contains a "_ struct{}" field, the
+// device that makes an unkeyed composite literal of st a compile error and
+// therefore makes adding a field a non-breaking change.
+func structHasBlankGuard(st *ast.StructType) bool {
+	if st.Fields == nil {
+		return false
+	}
+	for _, f := range st.Fields.List {
+		if len(f.Names) != 1 || f.Names[0].Name != "_" {
+			continue
+		}
+		if inner, ok := f.Type.(*ast.StructType); ok && (inner.Fields == nil || len(inner.Fields.List) == 0) {
 			return true
 		}
 	}
@@ -578,6 +698,14 @@ func keyedLiteralViolations(files map[string]*ast.File) []string {
 				}
 				if doc == nil || !strings.Contains(normalizeDocText(doc.Text()), keyedLiteralMarker) {
 					out = append(out, fmt.Sprintf("%s: type %s is an exported struct a caller can construct with a literal, but its doc comment does not note that construction must use keyed fields (API-STABILITY.md §7)", path, ts.Name.Name))
+				}
+				// §7 requires the guard as well as the note. The note is
+				// advice; the "_ struct{}" field is what makes an unkeyed
+				// literal fail to compile, so a struct carrying only the
+				// note still lets a caller write smtp.Param{"SIZE", "1"} —
+				// and adding a field then breaks them.
+				if !structHasBlankGuard(st) {
+					out = append(out, fmt.Sprintf("%s: type %s is an exported struct a caller can construct with a literal, but has no \"_ struct{}\" field to make unkeyed literals a compile error (API-STABILITY.md §7)", path, ts.Name.Name))
 				}
 			}
 		}

@@ -58,6 +58,31 @@ func TestEnhancedCodeString(t *testing.T) {
 	if got, want := c.String(), "5.7.1"; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
+	// The zero value means "the reply carried no enhanced code" and must
+	// not format as "0.0.0", which reads like a real code. This is what
+	// fmt.Sprint prints for a reply from a server that does not advertise
+	// ENHANCEDSTATUSCODES, so it is the common case, not an edge case.
+	if got := (EnhancedCode{}).String(); got != "" {
+		t.Errorf("zero EnhancedCode String() = %q, want empty", got)
+	}
+	// An empty Raw with non-zero fields still formats: only the fully zero
+	// value means absence.
+	if got, want := (EnhancedCode{Class: 2}).String(), "2.0.0"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+// TestEnhancedCodeEqualityIncludesRaw pins the hazard the doc comment warns
+// about: == is not the way to match a parsed code, because Raw participates.
+func TestEnhancedCodeEqualityIncludesRaw(t *testing.T) {
+	parsed := ParseEnhancedCode("5.7.1")
+	constructed := EnhancedCode{Class: 5, Subject: 7, Detail: 1}
+	if parsed == constructed {
+		t.Fatal("parsed == constructed: Raw no longer participates in equality; the doc comment on EnhancedCode now misleads and must be updated")
+	}
+	if parsed.Class != constructed.Class || parsed.Subject != constructed.Subject || parsed.Detail != constructed.Detail {
+		t.Fatal("field-wise comparison must match; it is the documented way to match a code")
+	}
 }
 
 // FuzzParseEnhancedCode asserts ParseEnhancedCode never panics on
