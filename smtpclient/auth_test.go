@@ -34,3 +34,13 @@ func TestAuthRefusesCleartextCredentials(t *testing.T) {
 		t.Fatalf("Auth error = %v, want cleartext credential refusal", err)
 	}
 }
+
+func TestSelectMechanismPrefersSCRAMPlus(t *testing.T) {
+	got, err := selectMechanism(nil, map[string]bool{
+		"SCRAM-SHA-256-PLUS": true,
+		"SCRAM-SHA-256":      true,
+	})
+	if err != nil || got != "SCRAM-SHA-256-PLUS" {
+		t.Fatalf("selectMechanism = %q, %v", got, err)
+	}
+}

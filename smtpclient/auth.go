@@ -188,7 +188,11 @@ func selectMechanism(preferred []string, available map[string]bool) (string, err
 	}
 	for _, name := range preferred {
 		if available[strings.ToUpper(name)] {
-			if _, err := smtpsasl.New(name, smtpsasl.Config{}); err == nil {
+			// Selection only establishes whether the mechanism is implemented.
+			// Give the constructor a non-empty placeholder binding so that a
+			// supported SCRAM-PLUS mechanism is not mistakenly filtered out
+			// before tlsExporter obtains its real binding below.
+			if _, err := smtpsasl.New(name, smtpsasl.Config{ChannelBinding: []byte{1}}); err == nil {
 				return strings.ToUpper(name), nil
 			}
 		}
