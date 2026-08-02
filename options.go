@@ -17,6 +17,15 @@ package smtp
 //
 // Callers constructing a MailOptions literal must use keyed fields.
 type MailOptions struct {
+	// Transport configures the transport-core ESMTP parameters (T08). A nil
+	// value leaves transport extensions unused.
+	Transport *TransportOptions
+	// Delivery configures delivery-control ESMTP parameters (T09). A nil value
+	// leaves delivery-control extensions unused.
+	Delivery *DeliveryOptions
+	// Legacy configures the implemented legacy and niche parameters (T10). A
+	// nil value leaves those extensions unused.
+	Legacy *LegacyOptions
 	// Auth is the authenticated identity of the original submitter, sent as
 	// the AUTH= MAIL parameter defined by RFC 4954 §5. It is separate from
 	// the AUTH command. The client xtext-encodes this value before sending it.
@@ -55,6 +64,9 @@ type MailOptions struct {
 //
 // Callers constructing a RcptOptions literal must use keyed fields.
 type RcptOptions struct {
+	// Delivery configures recipient-specific delivery-control parameters (T09).
+	// A nil value leaves them unused.
+	Delivery *RecipientDeliveryOptions
 	// Extra carries esmtp-params this library does not model with a typed
 	// field. See MailOptions.Extra.
 	Extra []Param
@@ -64,4 +76,90 @@ type RcptOptions struct {
 	AllowUnadvertisedParameters bool
 
 	_ struct{}
+}
+
+// TransportOptions configures SIZE, BODY, and SMTPUTF8 MAIL parameters.
+// Size is nil when SIZE is omitted; a non-nil zero explicitly declares an
+// empty message.
+//
+// Callers constructing a TransportOptions literal must use keyed fields.
+type TransportOptions struct {
+	Size     *int64
+	Body     BodyType
+	SMTPUTF8 bool
+	_        struct{}
+}
+
+// DeliveryOptions configures sender-level delivery-control extensions.
+//
+// Callers constructing a DeliveryOptions literal must use keyed fields.
+type DeliveryOptions struct {
+	DSN           *DSNMailOptions
+	DeliverBy     *DeliverByOptions
+	FutureRelease *FutureReleaseOptions
+	MTPriority    MTPriority
+	RRVS          *RRVSOptions
+	RequireTLS    bool
+	_             struct{}
+}
+
+// RecipientDeliveryOptions configures recipient-level delivery-control
+// extensions.
+//
+// Callers constructing a RecipientDeliveryOptions literal must use keyed fields.
+type RecipientDeliveryOptions struct {
+	DSN *DSNRcptOptions
+	_   struct{}
+}
+
+// DSNMailOptions configures DSN sender parameters.
+// Callers constructing a DSNMailOptions literal must use keyed fields.
+type DSNMailOptions struct {
+	Return     DSNReturn
+	EnvelopeID string
+	_          struct{}
+}
+
+// DSNRcptOptions configures DSN recipient parameters.
+// Callers constructing a DSNRcptOptions literal must use keyed fields.
+type DSNRcptOptions struct {
+	Notify       []DSNNotify
+	OriginalType string
+	Original     string
+	_            struct{}
+}
+
+// DeliverByOptions configures the DELIVERBY BY= parameter.
+// Callers constructing a DeliverByOptions literal must use keyed fields.
+type DeliverByOptions struct {
+	Seconds int64
+	Mode    string
+	_       struct{}
+}
+
+// FutureReleaseOptions configures mutually exclusive HOLDFOR and HOLDUNTIL.
+// Callers constructing a FutureReleaseOptions literal must use keyed fields.
+type FutureReleaseOptions struct {
+	HoldForSeconds int64
+	HoldUntil      string
+	_              struct{}
+}
+
+// RRVSOptions configures RRVS=.
+// Callers constructing a RRVSOptions literal must use keyed fields.
+type RRVSOptions struct {
+	Timestamp   string
+	Disposition string
+	_           struct{}
+}
+
+// LegacyOptions configures the implemented legacy MAIL parameters.
+// Callers constructing a LegacyOptions literal must use keyed fields.
+type LegacyOptions struct {
+	Solicit   string
+	TransitID string
+	Submitter string
+	ConPerm   string
+	ConNeg    string
+	_         struct{}
 }

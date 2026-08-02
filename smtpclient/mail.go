@@ -53,6 +53,11 @@ func (c *Client) mailArgs(path string, opts *smtp.MailOptions) ([]string, error)
 	if opts.Auth != "" {
 		params = append(params, smtp.Param{Keyword: "AUTH", Value: smtp.EncodeXtext(opts.Auth)})
 	}
+	extensionParams, err := c.extensionMailParams(opts)
+	if err != nil {
+		return nil, err
+	}
+	params = append(params, extensionParams...)
 	params = append(params, opts.Extra...)
 	encoded, err := c.encodeParams(params, opts.AllowUnadvertisedParameters)
 	if err != nil {

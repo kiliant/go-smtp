@@ -13,19 +13,29 @@ import (
 // DataOptions configures Data. A nil *DataOptions is valid.
 //
 // Callers constructing a DataOptions literal must use keyed fields.
-type DataOptions struct{ _ struct{} }
+type DataOptions struct {
+	// UseChunking selects the CHUNKING/BDAT transfer path. It is rejected
+	// locally unless the server advertised CHUNKING.
+	UseChunking bool
+	// ChunkSize bounds individual BDAT chunks. Zero selects the extension
+	// default.
+	ChunkSize int
+	_         struct{}
+}
 
 // Data submits content for all recipients accepted by Rcpt. It streams r
 // through RFC 5321 dot transparency without buffering. Its result is one
 // smtp.RecipientResult per accepted recipient: SMTP's one final reply is
 // copied to each entry so the result shape remains compatible with LMTP.
 func (c *Client) Data(ctx context.Context, r io.Reader, opts *DataOptions) (smtp.DataResult, error) {
-	_ = opts
 	if c == nil || c.conn == nil {
 		return nil, errNilClient
 	}
 	if r == nil {
 		return nil, errors.New("smtpclient: nil DATA reader")
+	}
+	if result, handled, err := extensionData(ctx, c, r, opts); handled {
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

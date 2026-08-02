@@ -26,11 +26,16 @@ func (c *Client) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) er
 	defer c.conn.opMu.Unlock()
 	args := []string{"TO:" + path}
 	if opts != nil {
-		params, err := c.encodeParams(opts.Extra, opts.AllowUnadvertisedParameters)
+		extensionParams, err := c.extensionRcptParams(opts)
 		if err != nil {
 			return err
 		}
-		args = append(args, params...)
+		params := append(extensionParams, opts.Extra...)
+		encoded, err := c.encodeParams(params, opts.AllowUnadvertisedParameters)
+		if err != nil {
+			return err
+		}
+		args = append(args, encoded...)
 	}
 	reply, err := c.commandLocked(ctx, "RCPT", args, c.conn.rcptTimeout, stateTransaction)
 	if err != nil {
