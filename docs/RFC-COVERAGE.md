@@ -14,20 +14,22 @@ keyword is missing here, check the registry, then add it.
 Status: `planned` → `in progress` → `done` → `verified` (exercised against at
 least two independent servers in the interop matrix).
 
-Nothing is implemented yet; every row is `planned`.
+M0 (T01 wire codec, T02 core types) has landed; the rows carrying those task
+IDs are updated below. Everything from T03 onward is still `planned`. No row is
+`verified` yet and none can be until the T06 interop matrix exists.
 
 ## Base — RFC 5321 core and the session extensions
 
 | Capability | RFC | Task | Status |
 |---|---|---|---|
-| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | planned |
+| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | in progress [^core] |
 | VRFY | 5321 | T05 | planned [^vrfy] |
 | EXPN | 5321 | T05 | planned |
 | HELP | 5321 | T05 | planned |
 | Message Submission | 6409 | T03 | planned |
 | STARTTLS | 3207 | T03 | planned |
 | PIPELINING | 2920 | T03 | planned |
-| ENHANCEDSTATUSCODES | 2034 | T01,T02 | planned |
+| ENHANCEDSTATUSCODES | 2034 | T01,T02 | in progress [^esc] |
 | AUTH | 4954 | T04 | planned |
 | LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | planned [^lmtp] |
 
@@ -38,7 +40,21 @@ Nothing is implemented yet; every row is `planned`.
 
 [^lmtp]: The *command surface* is T07, but the per-recipient result shape is a
     T01/T05 requirement and a `docs/API-STABILITY.md` §8 rule. It cannot be
-    retrofitted.
+    retrofitted. The shape itself — `smtp.DataResult` as a per-recipient
+    collection — landed with T02.
+
+[^core]: T01 and T02 have landed: reply framing, EHLO parsing, command and
+    esmtp-param encoding, and the core types every command signature is written
+    in. No command is *issued* yet — that is T03 (session) and T05
+    (transaction), both still `planned`.
+
+[^esc]: The RFC 3463 structure (`smtp.EnhancedCode`) and the syntactic
+    extraction of a leading `class.subject.detail` from reply text
+    (`smtpwire.ExtractEnhancedCode`) both landed with T01/T02, including the
+    §1c requirement that an unparseable code survive verbatim in `Raw`.
+    Extraction is deliberately unconditional at the wire layer; *gating* it on
+    the server having advertised `ENHANCEDSTATUSCODES` is session policy and
+    lands with T03's EHLO negotiation.
 
 ## Group A — transport core (task T08)
 
@@ -102,13 +118,16 @@ the extension accessor. Deferred means "we do not implement the command", never
 
 | Item | RFC | Task | Status | Note |
 |---|---|---|---|---|
-| Enhanced status code structure | 3463 | T02 | planned | `class.subject.detail` |
-| Enhanced status code registry | 5248 | T02 | planned | grows independently; codes stay open |
+| ESMTP extension mechanism (historical) | 1869 | T01,T02 | done [^esmtp] | origin of the EHLO extension framework |
+| xtext encoding | 3461 §4 | T01,T02 | done | required for `ENVID=`, `ORCPT=`, `AUTH=`; exported as `smtp.EncodeXtext` [^xtext] |
+| Enhanced status code structure | 3463 | T02 | done | `class.subject.detail`; unparseable codes survive in `Raw` |
+| Enhanced status code registry | 5248 | T02 | done | grows independently; codes stay open — never switched on exhaustively |
 | DSN message format | 3464 | T09 | planned | parsing a returned DSN is out of scope; cited by T09 |
 | Internationalised DSN | 6533 | T09 | planned | with SMTPUTF8 |
 | SMTPUTF8 framework | 6530 | T08 | planned | |
 | Internationalised email headers | 6532 | T08 | planned | referenced, not composed |
-| Dot-stuffing / transparency | 5321 §4.5.2 | T01 | planned | streaming filter both directions |
+| Dot-stuffing / transparency | 5321 §4.5.2 | T01 | done | streaming filter both directions; CRLF-normalising on send [^barelf] |
+| Line-ending conformance | 5321 §2.3.8, §4.1.1.4 | T01 | done | no bare CR/LF transmitted; bare-LF terminator rejected on read |
 | PLAIN | 4616 | T04 | planned | SASL |
 | LOGIN | — | T04 | planned | de-facto, no RFC; still ubiquitous |
 | CRAM-MD5 | 2195 | T04 | planned | legacy, still common |
@@ -119,6 +138,46 @@ the extension accessor. Deferred means "we do not implement the command", never
 | XOAUTH2 | — | T04 | planned | de-facto, Gmail/Outlook |
 | SASLprep | 4013, 3454 | T04 | planned | opt-in; deployed servers compare raw octets |
 | NFC/NFKC normalisation | UAX #15 | T04 | planned | generated tables, no `x/text` |
+
+[^xtext]: Exported from `package smtp` deliberately, as a **deliberate twin**
+    of `internal/smtpwire.EncodeXtext` rather than a shared implementation.
+    Package smtp imports nothing from this module, so it cannot reuse the
+    internal one, and the internal one can never be exported. Without an
+    exported encoder the `Extra []Param` escape hatch of API-STABILITY.md §1b is
+    weaker than §1b claims: a caller sending an unmodelled parameter whose value
+    needs xtext would have to reimplement RFC 3461 §4. The two copies are pinned
+    to identical golden vectors in their respective tests; changing one without
+    the other fails a test.
+
+[^esmtp]: RFC 1869 *SMTP Service Extensions* (STD 10) is where the `EHLO`
+    extension framework originates, and `doc.go` cites it. It is **obsolete** —
+    obsoleted by RFC 2821, itself obsoleted by RFC 5321 — so cite RFC 5321 §2.2
+    for the current text and treat 1869 as historical attribution only. Added
+    here because an api-guardian review found it was the one RFC number cited in
+    `package smtp` that this file did not carry, and `doc.go` claims every number
+    it cites is checked against this file.
+
+[^barelf]: `DotStuffWriter` normalises caller content to CRLF, per RFC 5321
+    §2.3.8: *"SMTP client implementations MUST NOT transmit these characters
+    except when they are intended as line terminators and then MUST, as
+    indicated above, transmit them only as a <CRLF> sequence."* Line starts are
+    therefore defined by CRLF alone and every line start is stuffed.
+
+    It previously forwarded bare CR and bare LF unchanged. That was
+    non-conforming, and asymmetric in a way that mattered: LF alone *was*
+    treated as a line start, so `<LF>.<LF>` was stuffed, but CR alone was not,
+    so `<CR>.<CR><LF>` reached the wire with the dot unstuffed — an
+    SMTP-smuggling vector against any receiver honouring bare CR as a line
+    terminator. Normalisation removes the disagreement rather than picking a
+    side of it.
+
+    The receiving half is `DotUnstuffReader`, which stays lenient about
+    un-stuffing after a bare LF but rejects a bare-LF *end-of-content marker*
+    with `ErrBareLFTerminator`, because RFC 5321 §4.1.1.4 states that
+    `<LF>.<LF>` MUST NOT be treated as equivalent to `<CRLF>.<CRLF>`.
+
+    BDAT is unaffected: `CopyBDATChunk` has no transparency layer, so
+    BINARYMIME content stays byte-exact.
 
 ## Explicitly out of scope for the core client
 
