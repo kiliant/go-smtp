@@ -17,6 +17,11 @@ package smtp
 //
 // Callers constructing a MailOptions literal must use keyed fields.
 type MailOptions struct {
+	// Auth is the authenticated identity of the original submitter, sent as
+	// the AUTH= MAIL parameter defined by RFC 4954 §5. It is separate from
+	// the AUTH command. The client xtext-encodes this value before sending it.
+	// An empty value omits the parameter.
+	Auth string
 	// Extra carries esmtp-params this library does not model with a typed
 	// field. It is the escape hatch required by docs/API-STABILITY.md §1b:
 	// a caller who needs a parameter that has not been implemented yet must
@@ -28,6 +33,13 @@ type MailOptions struct {
 	// naming the missing extension is a better diagnostic than a 501 from a
 	// strict server.
 	Extra []Param
+	// AllowUnadvertisedParameters permits Extra parameters, and the AUTH=
+	// parameter when set, even when the server did not advertise their
+	// extension keyword. It defaults to false so the client reports a local,
+	// actionable validation error before writing a command that a strict
+	// server would reject. Enable it only when the caller has independent
+	// knowledge that the peer accepts the parameter.
+	AllowUnadvertisedParameters bool
 
 	_ struct{}
 }
@@ -46,6 +58,10 @@ type RcptOptions struct {
 	// Extra carries esmtp-params this library does not model with a typed
 	// field. See MailOptions.Extra.
 	Extra []Param
+	// AllowUnadvertisedParameters permits Extra parameters even when the
+	// server did not advertise their extension keyword. It has the same
+	// default and purpose as MailOptions.AllowUnadvertisedParameters.
+	AllowUnadvertisedParameters bool
 
 	_ struct{}
 }
