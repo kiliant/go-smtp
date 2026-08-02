@@ -125,6 +125,17 @@ func TestEncodeXtextDecodeXtextRoundTrip(t *testing.T) {
 	}
 }
 
+// TestEncodeXtextKnownVectors pins the exact golden vectors that the root
+// package's TestEncodeXtextKnownVectors pins. EncodeXtext exists twice in
+// this module — here and in smtp/xtext.go — because package smtp imports
+// nothing from this module and this package can never be exported, so the
+// duplication is forced by the layering rule rather than chosen. These two
+// tables are the only thing keeping the copies from drifting apart into two
+// subtly different wire encodings.
+//
+// Drift will be introduced on THIS side: the root copy is frozen at v1.0 and
+// will not be edited, while this one is the live codec. If you change the
+// encoder here, change smtp/xtext.go and its table too.
 func TestEncodeXtextKnownVectors(t *testing.T) {
 	tests := []struct{ raw, want string }{
 		{"", ""},
