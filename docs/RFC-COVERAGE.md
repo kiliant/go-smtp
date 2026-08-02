@@ -14,23 +14,24 @@ keyword is missing here, check the registry, then add it.
 Status: `planned` → `in progress` → `done` → `verified` (exercised against at
 least two independent servers in the interop matrix).
 
-M0 (T01 wire codec, T02 core types) and T03 (connection, EHLO, TLS and
-pipelining) have landed; the rows carrying those task IDs are updated below.
-No row is `verified` yet and none can be until the T06 interop matrix exists.
+All implementation tasks through T11 have landed at the unit-test level. The
+default interop matrix drives the public transaction API through seven real
+servers. Rows are promoted to `verified` only where at least two independent
+servers exercise the capability itself, not merely advertise it.
 
 ## Base — RFC 5321 core and the session extensions
 
 | Capability | RFC | Task | Status |
 |---|---|---|---|
-| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | in progress [^core] |
-| VRFY | 5321 | T05 | planned [^vrfy] |
-| EXPN | 5321 | T05 | planned |
-| HELP | 5321 | T05 | planned |
-| Message Submission | 6409 | T03 | in progress [^submission] |
+| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | verified [^core] |
+| VRFY | 5321 | T05 | done [^vrfy] |
+| EXPN | 5321 | T05 | done |
+| HELP | 5321 | T05 | done |
+| Message Submission | 6409 | T03 | done [^submission] |
 | STARTTLS | 3207 | T03 | done |
-| PIPELINING | 2920 | T03 | done |
+| PIPELINING | 2920 | T03 | verified [^pipelining] |
 | ENHANCEDSTATUSCODES | 2034 | T01,T02,T03 | done [^esc] |
-| AUTH | 4954 | T04 | planned |
+| AUTH | 4954 | T04 | done |
 | LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | done [^lmtp] |
 
 [^vrfy]: The IANA registry cites `draft-ietf-emailcore-rfc5321bis` for `VRFY`.
@@ -41,17 +42,21 @@ No row is `verified` yet and none can be until the T06 interop matrix exists.
 [^lmtp]: The *command surface* is T07, but the per-recipient result shape is a
     T01/T05 requirement and a `docs/API-STABILITY.md` §8 rule. It cannot be
     retrofitted. The shape itself — `smtp.DataResult` as a per-recipient
-    collection — landed with T02.
+    collection — landed with T02. The matrix now performs a real LHLO and LMTP
+    delivery through Dovecot; a second independent LMTP server is still needed
+    before this row can be `verified`.
 
-[^core]: T01 through T03 have landed reply framing, EHLO parsing, command and
-    esmtp-param encoding, the shared core types, connection establishment,
-    greeting/EHLO negotiation and orderly shutdown. T05 still owns the mail
-    transaction commands, so the full SMTP core remains `in progress`.
+[^core]: The default matrix performs public-client MAIL/RCPT/DATA transactions
+    and sink readback across seven independent SMTP/LMTP implementations.
 
-[^submission]: T03 supplies cleartext, STARTTLS and implicit-TLS connection
-    entry points suitable for submission endpoints. Authentication and message
-    submission commands land with T04 and T05, so end-to-end submission remains
-    `in progress`.
+[^pipelining]: `smtpclient.RcptBatch` drives bounded pipelined RCPT groups
+    through Postfix and Stalwart; the same production queue runs at depth one
+    against a peer that omits PIPELINING.
+
+[^submission]: The connection, authentication, and transaction surfaces needed
+    for submission are complete. This row remains `done`, rather than
+    `verified`, until two independent submission endpoints exercise the full
+    authenticated path.
 
 [^esc]: The RFC 3463 structure (`smtp.EnhancedCode`) and the syntactic
     extraction of a leading `class.subject.detail` from reply text
@@ -69,11 +74,16 @@ The extensions that change how message content itself is transmitted.
 | Capability | RFC | Status |
 |---|---|---|
 | SIZE | 1870 | done |
-| 8BITMIME | 6152 | done |
-| SMTPUTF8 | 6531 | done |
-| CHUNKING | 3030 | done |
+| 8BITMIME | 6152 | verified [^transport-interop] |
+| SMTPUTF8 | 6531 | verified [^transport-interop] |
+| CHUNKING | 3030 | verified [^transport-interop] |
 | BINARYMIME | 3030 | done |
 | UTF8SMTP | 5336 | done [^utf8smtp] |
+
+[^transport-interop]: The `smtpclient` interop suite submits the same fixture
+    bytes through DATA and CHUNKING/BDAT to Postfix and Stalwart and reads them
+    back through independent sinks. Its 8-bit fixture requests BODY=8BITMIME;
+    its SMTPUTF8 fixture requests SMTPUTF8 on MAIL and sends a UTF-8 RCPT path.
 
 [^utf8smtp]: Obsoleted by RFC 6531. Recognised on the wire for compatibility
     with servers still advertising it; never *sent* as a preference. Do not
@@ -129,22 +139,22 @@ the extension accessor. Deferred means "we do not implement the command", never
 | xtext encoding | 3461 §4 | T01,T02 | done | required for `ENVID=`, `ORCPT=`, `AUTH=`; exported as `smtp.EncodeXtext` [^xtext] |
 | Enhanced status code structure | 3463 | T02 | done | `class.subject.detail`; unparseable codes survive in `Raw` |
 | Enhanced status code registry | 5248 | T02 | done | grows independently; codes stay open — never switched on exhaustively |
-| DSN message format | 3464 | T09 | planned | parsing a returned DSN is out of scope; cited by T09 |
-| Internationalised DSN | 6533 | T09 | planned | with SMTPUTF8 |
-| SMTPUTF8 framework | 6530 | T08 | planned | |
-| Internationalised email headers | 6532 | T08 | planned | referenced, not composed |
+| DSN message format | 3464 | T09 | deferred | parsing a returned DSN is out of scope; cited by T09 |
+| Internationalised DSN | 6533 | T09 | deferred | returned-DSN parsing is out of scope |
+| SMTPUTF8 framework | 6530 | T08 | done | client supports its SMTP transport role |
+| Internationalised email headers | 6532 | T08 | deferred | referenced, not composed |
 | Dot-stuffing / transparency | 5321 §4.5.2 | T01 | done | streaming filter both directions; CRLF-normalising on send [^barelf] |
 | Line-ending conformance | 5321 §2.3.8, §4.1.1.4 | T01 | done | no bare CR/LF transmitted; bare-LF terminator rejected on read |
-| PLAIN | 4616 | T04 | planned | SASL |
-| LOGIN | — | T04 | planned | de-facto, no RFC; still ubiquitous |
-| CRAM-MD5 | 2195 | T04 | planned | legacy, still common |
-| SCRAM-SHA-1 / SCRAM-SHA-256 | 5802, 7677 | T04 | planned | |
-| SCRAM-SHA-\*-PLUS | 5802, 7677 | T04 | planned | channel binding to TLS exporter |
-| EXTERNAL | 4422 | T04 | planned | client certificate auth |
-| OAUTHBEARER | 7628 | T04 | planned | |
-| XOAUTH2 | — | T04 | planned | de-facto, Gmail/Outlook |
-| SASLprep | 4013, 3454 | T04 | planned | opt-in; deployed servers compare raw octets |
-| NFC/NFKC normalisation | UAX #15 | T04 | planned | generated tables, no `x/text` |
+| PLAIN | 4616 | T04 | done | SASL |
+| LOGIN | — | T04 | done | de-facto, no RFC; still ubiquitous |
+| CRAM-MD5 | 2195 | T04 | done | legacy, still common |
+| SCRAM-SHA-1 / SCRAM-SHA-256 | 5802, 7677 | T04 | done | |
+| SCRAM-SHA-\*-PLUS | 5802, 7677 | T04 | done | channel binding to TLS exporter |
+| EXTERNAL | 4422 | T04 | done | client certificate auth |
+| OAUTHBEARER | 7628 | T04 | done | |
+| XOAUTH2 | — | T04 | done | de-facto, Gmail/Outlook |
+| SASLprep | 4013, 3454 | T04 | done | opt-in; deployed servers compare raw octets |
+| NFC/NFKC normalisation | UAX #15 | T04 | done | generated tables, no `x/text` |
 
 [^xtext]: Exported from `package smtp` deliberately, as a **deliberate twin**
     of `internal/smtpwire.EncodeXtext` rather than a shared implementation.

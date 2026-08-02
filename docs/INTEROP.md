@@ -12,8 +12,9 @@ reads. Here the client **writes**, so the harness needs the opposite: a way to
 read back what each server actually received. That asymmetry drives the design.
 
 Every server profile provides a **sink** — a way to retrieve delivered messages —
-implemented however that server allows: an HTTP API, or `podman exec` reading a
-maildir. The harness exposes one interface over them.
+implemented however that server allows: an HTTP API, IMAP, a server management
+CLI, or `podman exec` reading a maildir. The harness exposes one interface over
+them.
 
 This matters more than it sounds. The transparency layer (dot-stuffing, RFC 5321
 §4.5.2) is only genuinely provable by byte-comparing what arrived against what
@@ -31,6 +32,10 @@ podman machine start                       # once
 go test -count=1 -race -tags=interop ./smtpclient
 go test -count=1 -race -tags=interop ./interop/...
 ```
+
+Set `GO_SMTP_INTEROP_LARGE=1` when running `./smtpclient` to include the
+200 MiB real-server streaming fixture. The normal test suite always runs the
+flat-allocation streaming regression without requiring a container transfer.
 
 The first command names `./smtpclient` explicitly so interop-tagged
 production-client tests run. The commands must remain separate and sequential:
@@ -59,11 +64,11 @@ Architectures probed on darwin/arm64, 2026-08-02, with
 
 | Server | Image | Arch | Tier | Why it is in the matrix |
 |---|---|---|---|---|
-| Postfix | `docker.io/boky/postfix` | arm64 native ✓ | 1 | The most deployed MTA. The ESMTP baseline — if it disagrees with us, we are wrong |
-| Stalwart | `docker.io/stalwartlabs/stalwart` | arm64 native ✓ | 1 | Modern, aggressive coverage: SMTPUTF8, REQUIRETLS, DSN, CHUNKING |
-| Mailpit | `docker.io/axllent/mailpit` | arm64 native ✓ | 1 | Deliberately minimal sink — catches assumptions about optional extensions. HTTP API makes it the easiest sink to assert against |
+| Postfix | `docker.io/boky/postfix` (digest-pinned) | arm64 native ✓ | 1 | The most deployed MTA. The ESMTP baseline — if it disagrees with us, we are wrong |
+| Stalwart | `docker.io/stalwartlabs/mail-server:v0.11.8` | arm64 native ✓ | 1 | Modern, aggressive coverage: SMTPUTF8, REQUIRETLS, CHUNKING |
+| Mailpit | `docker.io/axllent/mailpit` (digest-pinned) | arm64 native ✓ | 1 | Deliberately minimal sink — catches assumptions about optional extensions. HTTP API makes it the easiest sink to assert against |
 | Dovecot LMTP | `docker.io/dovecot/dovecot:2.4.3` | arm64 native ✓ | 1 | The LMTP reference (RFC 2033). The only way to exercise per-recipient DATA replies against a real implementation |
-| maddy | `docker.io/foxcpp/maddy` | arm64 native ✓ | 2 | Independent Go implementation, different bug class from the C servers |
+| maddy | `docker.io/foxcpp/maddy` (digest-pinned) | arm64 native ✓ | 2 | Independent Go implementation, different bug class from the C servers |
 | Exim | local build: `interop/servers/exim/Containerfile` | arm64 native (by build) | 2 | Second-most deployed; quirky, the compatibility canary |
 | GreenMail | `docker.io/greenmail/standalone:2.1.9` | arm64 native ✓ | 2 | JVM implementation; minimal extension set |
 | Apache James | `docker.io/apache/james:demo-3.8.2` | **amd64 only** | 3 | JVM MTA, different bug class again |
@@ -116,7 +121,7 @@ against a specific bug class rather than merely exercising the happy path:
 | Content not ending in CRLF | the terminator boundary case |
 | A line of exactly 1000 octets, and one of 1001 | RFC 5321 §4.5.3.1.6 text-line limit |
 | 8-bit UTF-8 body | `8BITMIME` vs downgrade behaviour |
-| UTF-8 in local-part and domain | `SMTPUTF8` (RFC 6531) |
+| UTF-8 RCPT local-part and domain after SMTPUTF8 MAIL | RFC 6531 MAIL/RCPT coupling |
 | Binary content with embedded NUL | `BINARYMIME` + `CHUNKING`, which is the only legal way to send it |
 | 200 MiB message | the streaming guarantee; peak allocation must stay flat |
 | Multi-recipient, one invalid | per-recipient results, and the LMTP N-replies path |
