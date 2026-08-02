@@ -35,7 +35,6 @@
     ],
     "ask": [
       "Bash(git push:*)",
-      "Bash(git commit:*)",
       "Bash(podman rm:*)",
       "Bash(podman rmi:*)",
       "Bash(podman system prune:*)",
