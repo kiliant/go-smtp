@@ -1,0 +1,8 @@
+# Dovecot LMTP interop target: the RFC 2033 reference and the only way to
+# exercise per-recipient DATA replies against a real implementation. Adds a
+# plain (non-TLS) LMTP listener on port 24 and a static userdb so any
+# recipient resolves to a maildir under /srv/vmail, since the base image
+# ships only an implicit-TLS LMTP listener on 31024 and no userdb.
+FROM docker.io/dovecot/dovecot:2.4.3
+
+COPY interop.conf /etc/dovecot/conf.d/99-interop.conf

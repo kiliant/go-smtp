@@ -1,0 +1,11 @@
+# maddy interop target: an independent Go implementation, a different bug
+# class from the C servers (docs/INTEROP.md). NOT LIVE-VERIFIED this
+# session — see profile.go.
+FROM docker.io/foxcpp/maddy
+
+COPY maddy.conf /data/maddy.conf
+
+RUN mkdir -p /certs \
+	&& openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+		-keyout /certs/key.pem -out /certs/cert.pem \
+		-subj "/CN=mail.example.test" || true

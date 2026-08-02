@@ -1,0 +1,17 @@
+# Stalwart interop target.
+#
+# Stalwart 0.16 does not take a static TOML config via --config: that file
+# is a JSON "DataStore" registry descriptor (crates/store/src/registry/
+# local.rs, read_data_store), a bootstrap pointer at the backing store for
+# the server's real (dynamic, database-backed) settings. Absent, the server
+# starts in bootstrap mode and opens only an HTTP admin UI on :8080 for
+# interactive setup; present-but-not-a-DataStore-JSON, it fails with
+# "Failed to parse data store settings ... expected value at line 1 column
+# 1" — the exact failure this profile hit before the cause was traced.
+#
+# STALWART_RECOVERY_ADMIN pins the bootstrap admin credential (rather than
+# the randomly generated one-time password), which is the documented path to
+# drive setup non-interactively over the admin HTTP API. Completing that
+# (create domain, mailbox, and unlock the SMTP listener via the API) is not
+# done in this Containerfile — see profile.go.
+FROM docker.io/stalwartlabs/stalwart

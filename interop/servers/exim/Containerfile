@@ -1,0 +1,26 @@
+# Exim interop target, built from Debian packages: exim publishes no
+# maintained multi-arch image under docker.io/exim/exim4 (confirmed 2026-08-02:
+# "requested access to the resource is denied"). This mirrors the sibling
+# repo's approach for Cyrus. arm64-native by construction, since it builds on
+# whatever platform podman build runs on.
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+		exim4-daemon-heavy openssl \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& useradd -m -d /home/interop -s /usr/sbin/nologin interop \
+	&& mkdir -p /home/interop/Maildir/new /home/interop/Maildir/cur /home/interop/Maildir/tmp \
+	&& chown -R interop:interop /home/interop \
+	&& mkdir -p /etc/exim4/certs \
+	&& openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+		-keyout /etc/exim4/certs/exim.key -out /etc/exim4/certs/exim.crt \
+		-subj "/CN=mail.example.test"
+
+COPY exim4.conf /etc/exim4/exim4.conf.template
+RUN rm -f /etc/exim4/exim4.conf \
+	&& cp /etc/exim4/exim4.conf.template /etc/exim4/exim4.conf
+
+EXPOSE 25
+
+CMD ["/usr/sbin/exim4", "-bd", "-q30m", "-v"]
