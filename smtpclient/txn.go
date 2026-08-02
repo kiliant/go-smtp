@@ -72,6 +72,7 @@ func (c *Client) Reset(ctx context.Context, opts *ResetOptions) error {
 	if c.conn.state != stateClosed {
 		c.conn.state = c.conn.transactionBase
 		c.conn.recipients = nil
+		c.conn.smtpUTF8 = false
 	}
 	c.conn.mu.Unlock()
 	return nil

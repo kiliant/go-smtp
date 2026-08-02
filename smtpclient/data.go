@@ -106,6 +106,7 @@ func (c *Client) Data(ctx context.Context, r io.Reader, opts *DataOptions) (smtp
 	if c.conn.state != stateClosed {
 		c.conn.state = c.conn.transactionBase
 		c.conn.recipients = nil
+		c.conn.smtpUTF8 = false
 	}
 	c.conn.mu.Unlock()
 	if err := unexpectedReply("DATA", reply, c.conn.enhancedStatusCodes(), 250); err != nil {

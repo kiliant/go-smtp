@@ -39,6 +39,7 @@ func (c *Client) Mail(ctx context.Context, from string, opts *smtp.MailOptions) 
 		c.conn.transactionBase = c.conn.state
 		c.conn.state = stateTransaction
 		c.conn.recipients = nil
+		c.conn.smtpUTF8 = opts != nil && opts.Transport != nil && opts.Transport.SMTPUTF8
 	}
 	c.conn.mu.Unlock()
 	return nil
@@ -46,16 +47,18 @@ func (c *Client) Mail(ctx context.Context, from string, opts *smtp.MailOptions) 
 
 func (c *Client) mailArgs(path string, opts *smtp.MailOptions) ([]string, error) {
 	args := []string{"FROM:" + path}
-	if opts == nil {
-		return args, nil
-	}
-	params := make([]smtp.Param, 0, len(opts.Extra)+1)
-	if opts.Auth != "" {
-		params = append(params, smtp.Param{Keyword: "AUTH", Value: smtp.EncodeXtext(opts.Auth)})
-	}
-	extensionParams, err := c.extensionMailParams(opts)
+	extensionParams, err := c.extensionMailParams(path, opts)
 	if err != nil {
 		return nil, err
+	}
+	if opts == nil {
+		// Hooks still ran above to validate caller-controlled paths, but a nil
+		// options struct cannot request any MAIL parameters.
+		return args, nil
+	}
+	params := make([]smtp.Param, 0, len(opts.Extra)+len(extensionParams)+1)
+	if opts.Auth != "" {
+		params = append(params, smtp.Param{Keyword: "AUTH", Value: smtp.EncodeXtext(opts.Auth)})
 	}
 	params = append(params, extensionParams...)
 	params = append(params, opts.Extra...)
@@ -108,6 +111,10 @@ func parameterExtension(param smtp.Param) string {
 		case "BINARYMIME":
 			return string(smtp.ExtBinaryMIME)
 		}
+		// BODY is defined by 8BITMIME and extended by BINARYMIME; it is not
+		// itself an EHLO keyword. Unknown future values require the baseline
+		// transport extension unless the caller explicitly opts out.
+		return string(smtp.Ext8BitMIME)
 	}
 	return strings.ToUpper(param.Keyword)
 }

@@ -12,8 +12,8 @@ import (
 // The extension tasks own concrete encoders in ext_[abc]_*.go. This small
 // registry is the sole transaction-core seam: it keeps the T05 command path
 // independent of an ever-growing list of extension-specific fields.
-type mailExtensionEncoder func(*Client, *smtp.MailOptions) ([]smtp.Param, error)
-type rcptExtensionEncoder func(*Client, *smtp.RcptOptions) ([]smtp.Param, error)
+type mailExtensionEncoder func(*Client, string, *smtp.MailOptions) ([]smtp.Param, error)
+type rcptExtensionEncoder func(*Client, string, *smtp.RcptOptions) ([]smtp.Param, error)
 type dataExtensionHandler func(context.Context, *Client, io.Reader, *DataOptions) (smtp.DataResult, bool, error)
 type lmtpFinalReplyHandler func(context.Context, *Client, []string) (smtp.DataResult, bool, error)
 
@@ -60,13 +60,13 @@ func registerLMTPFinalReplies(fn lmtpFinalReplyHandler) {
 	extensionHooks.lmtp = fn
 }
 
-func (c *Client) extensionMailParams(opts *smtp.MailOptions) ([]smtp.Param, error) {
+func (c *Client) extensionMailParams(path string, opts *smtp.MailOptions) ([]smtp.Param, error) {
 	extensionHooks.RLock()
 	hooks := append([]namedMailEncoder(nil), extensionHooks.mail...)
 	extensionHooks.RUnlock()
 	var params []smtp.Param
 	for _, hook := range hooks {
-		p, err := hook.fn(c, opts)
+		p, err := hook.fn(c, path, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -75,13 +75,13 @@ func (c *Client) extensionMailParams(opts *smtp.MailOptions) ([]smtp.Param, erro
 	return params, nil
 }
 
-func (c *Client) extensionRcptParams(opts *smtp.RcptOptions) ([]smtp.Param, error) {
+func (c *Client) extensionRcptParams(path string, opts *smtp.RcptOptions) ([]smtp.Param, error) {
 	extensionHooks.RLock()
 	hooks := append([]namedRcptEncoder(nil), extensionHooks.rcpt...)
 	extensionHooks.RUnlock()
 	var params []smtp.Param
 	for _, hook := range hooks {
-		p, err := hook.fn(c, opts)
+		p, err := hook.fn(c, path, opts)
 		if err != nil {
 			return nil, err
 		}

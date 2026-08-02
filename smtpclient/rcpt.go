@@ -26,7 +26,7 @@ func (c *Client) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) er
 	defer c.conn.opMu.Unlock()
 	args := []string{"TO:" + path}
 	if opts != nil {
-		extensionParams, err := c.extensionRcptParams(opts)
+		extensionParams, err := c.extensionRcptParams(path, opts)
 		if err != nil {
 			return err
 		}

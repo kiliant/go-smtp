@@ -39,8 +39,11 @@ type connection struct {
 	// intentionally connection state so DATA can produce the stable
 	// per-recipient result shape without exposing protocol internals.
 	recipients []string
-	options    ClientOptions
-	pipeline   pipeline
+	// smtpUTF8 records whether the active transaction requested SMTPUTF8 so
+	// recipient path validation can enforce the MAIL/RCPT coupling.
+	smtpUTF8 bool
+	options  ClientOptions
+	pipeline pipeline
 }
 
 // Dial connects to opts.Address, reads the greeting, and negotiates ESMTP.
