@@ -128,15 +128,14 @@ func (p *xoauth2) Start() ([]byte, error) {
 func (p *xoauth2) Next([]byte) ([]byte, bool, error) { return []byte("\x01"), true, nil }
 
 type scram struct {
-	name        string
-	cfg         Config
-	newHash     func() hash.Hash
-	plus        bool
-	nonce       string
-	firstBare   string
-	serverFirst string
-	expected    []byte
-	step        int
+	name      string
+	cfg       Config
+	newHash   func() hash.Hash
+	plus      bool
+	nonce     string
+	firstBare string
+	expected  []byte
+	step      int
 }
 
 func newSCRAM(name string, cfg Config, newHash func() hash.Hash) (*scram, error) {
