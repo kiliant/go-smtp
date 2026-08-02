@@ -110,6 +110,13 @@ func FuzzDotStuffRoundTrip(f *testing.F) {
 	f.Add([]byte(""))
 	f.Add([]byte("\r\n"))
 	f.Add([]byte{0x00, 0x0d, 0x0a, 0x2e, 0x0d, 0x0a})
+	// Bare CR/LF vectors: RFC 5321 §2.3.8 normalisation, and the
+	// "<CR>.<CR><LF>" smuggling shape the writer used to pass through
+	// unstuffed.
+	f.Add([]byte("a\r.\r\n"))
+	f.Add([]byte("\r"))
+	f.Add([]byte("\n"))
+	f.Add([]byte("\r\r\n\n"))
 
 	f.Fuzz(func(t *testing.T, content []byte) {
 		var stuffed bytes.Buffer
@@ -132,15 +139,25 @@ func FuzzDotStuffRoundTrip(f *testing.F) {
 			t.Fatalf("unstuff %q (stuffed %q): %v", content, stuffed.Bytes(), err)
 		}
 
-		// Close appends a CRLF only when content was written that did not
-		// already end in one; empty content round-trips to empty.
-		want := content
-		if len(want) > 0 && want[len(want)-1] != '\n' {
-			want = append(append([]byte{}, want...), '\r', '\n')
-		}
+		// The writer normalises line endings (RFC 5321 §2.3.8), so the
+		// round-trip identity is unstuff(stuff(x)) == normalizeCRLF(x),
+		// not == x. See wantRoundTrip in dotstuff_test.go.
+		want := wantRoundTrip(content)
 		if !bytes.Equal(got, want) {
 			t.Fatalf("round-trip mismatch: content %q -> stuffed %q -> got %q, want %q",
 				content, stuffed.Bytes(), got, want)
+		}
+
+		// Independently of the round trip: no bare CR and no bare LF may
+		// ever reach the wire.
+		out := stuffed.Bytes()
+		for i := range out {
+			if out[i] == '\r' && (i+1 >= len(out) || out[i+1] != '\n') {
+				t.Fatalf("bare CR at offset %d in %q (content %q)", i, out, content)
+			}
+			if out[i] == '\n' && (i == 0 || out[i-1] != '\r') {
+				t.Fatalf("bare LF at offset %d in %q (content %q)", i, out, content)
+			}
 		}
 	})
 }

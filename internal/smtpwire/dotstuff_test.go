@@ -116,6 +116,12 @@ func TestDotStuffMultipleDotLines(t *testing.T) {
 // additionally one byte at a time — proves the filter's state truly
 // survives across Write calls; a test that writes the whole body in one
 // call proves nothing.
+//
+// CRLF normalisation adds a second trap of exactly the same shape: a CR
+// ending one Write cannot be classified until the next Write reveals
+// whether an LF follows, so the last four inputs below exist to split a CR
+// from its LF. A filter that resolved the CR eagerly would turn "\r\n" into
+// "\r\n\r\n" whenever the pair straddled a Write boundary.
 func TestDotStuffSplitAcrossWriteBoundary(t *testing.T) {
 	inputs := [][]byte{
 		[]byte("before\r\n.\r\nafter\r\n"),
@@ -123,6 +129,10 @@ func TestDotStuffSplitAcrossWriteBoundary(t *testing.T) {
 		[]byte("..\r\n"),
 		[]byte("a\r\n.b\r\n..c\r\nd"),
 		[]byte(".\r\n.\r\n.\r\n"),
+		[]byte("a\r\nb"),
+		[]byte("a\r.\r\nb"),
+		[]byte("\r\n\r\n"),
+		[]byte("x\ry\nz\r\n"),
 	}
 	for _, in := range inputs {
 		whole := stuffAll(t, in, writeWhole)
@@ -139,24 +149,60 @@ func TestDotStuffSplitAcrossWriteBoundary(t *testing.T) {
 	}
 }
 
-func TestDotStuffBareLFStartsNewLine(t *testing.T) {
-	// Documented decision: line boundaries for stuffing purposes are
-	// defined by LF alone, so a bare-LF-terminated line still triggers
-	// stuffing on the next line.
-	got := stuffAll(t, []byte("a\n.\nb\r\n"), writeWhole)
-	want := []byte("a\n..\nb\r\n.\r\n")
-	if !bytes.Equal(got, want) {
-		t.Fatalf("got %q, want %q", got, want)
+// TestDotStuffNormalisesBareLineEndings pins RFC 5321 §2.3.8: a bare CR or
+// bare LF in caller content MUST NOT reach the wire, and becomes a CRLF
+// terminator instead. Each promoted terminator also opens a new line, so a
+// '.' that follows one is a stuffing opportunity — which is the security
+// half of this transform, not a side effect.
+func TestDotStuffNormalisesBareLineEndings(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"bare LF", "a\n.\nb\r\n", "a\r\n..\r\nb\r\n.\r\n"},
+		{"bare CR", "a\r.b\r\n", "a\r\n..b\r\n.\r\n"},
+		{"CR LF pair untouched", "a\r\n.b\r\n", "a\r\n..b\r\n.\r\n"},
+		{"CR CR is two terminators", "a\r\r.\r\n", "a\r\n\r\n..\r\n.\r\n"},
+		{"LF CR is two terminators", "a\n\r.\r\n", "a\r\n\r\n..\r\n.\r\n"},
+		{"trailing bare CR", "a\r", "a\r\n.\r\n"},
+		{"trailing bare LF", "a\n", "a\r\n.\r\n"},
+		{"lone CR only", "\r", "\r\n.\r\n"},
+		// The smuggling vector the old pass-through behaviour left open:
+		// a receiver honouring bare CR as a terminator would have seen an
+		// unstuffed "." line here and ended the message early.
+		{"CR dot CR LF", "a\r.\r\n", "a\r\n..\r\n.\r\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stuffAll(t, []byte(tc.in), writeWhole)
+			if !bytes.Equal(got, []byte(tc.want)) {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
-func TestDotStuffBareCRIsOrdinaryContent(t *testing.T) {
-	// Documented decision: a lone CR does not start a new line and creates
-	// no stuffing opportunity by itself.
-	got := stuffAll(t, []byte("a\r.b\r\n"), writeWhole)
-	want := []byte("a\r.b\r\n.\r\n")
-	if !bytes.Equal(got, want) {
-		t.Fatalf("got %q, want %q", got, want)
+// TestDotStuffNoBareCRLFReachesTheWire is the blunt invariant behind the
+// table above, asserted over every input the other tests use: after
+// stuffing, every CR is followed by an LF and every LF is preceded by a CR.
+func TestDotStuffNoBareCRLFReachesTheWire(t *testing.T) {
+	inputs := []string{
+		"a\n.\nb\r\n", "a\r.b\r\n", "\r", "\n", "\r\r\r", "\n\n\n", "\r\n\r\n",
+		".\n.\r.\r\n", "no terminator", "", "\r\n.\r", "x\ry\nz",
+	}
+	for _, in := range inputs {
+		for _, wf := range []func(io.Writer, []byte) error{writeWhole, writeByteAtATime} {
+			out := stuffAll(t, []byte(in), wf)
+			for i := range out {
+				if out[i] == '\r' && (i+1 >= len(out) || out[i+1] != '\n') {
+					t.Fatalf("input %q -> %q: bare CR at offset %d", in, out, i)
+				}
+				if out[i] == '\n' && (i == 0 || out[i-1] != '\r') {
+					t.Fatalf("input %q -> %q: bare LF at offset %d", in, out, i)
+				}
+			}
+		}
 	}
 }
 
@@ -204,22 +250,69 @@ func TestDotUnstuffRoundTrip(t *testing.T) {
 		"no trailing terminator",
 		"a\n.\nb\r\n",
 		"a\r.b\r\n",
+		"\r",
+		"\n",
+		"mixed\rendings\nhere\r\n",
 	}
 	for _, in := range inputs {
 		for _, readSize := range []int{1, 2, 3, 7, 64, 4096} {
 			stuffed := stuffAll(t, []byte(in), writeWhole)
 			got := unstuffAll(t, stuffed, readSize)
-			// Close appends a CRLF only when content was written that did
-			// not already end in one. Empty content round-trips to empty:
-			// it stuffs to a bare ".CRLF" terminator, so demanding a CRLF
-			// back would assert that an empty message gains a blank line.
-			want := []byte(in)
-			if len(want) > 0 && want[len(want)-1] != '\n' {
-				want = append(append([]byte{}, want...), '\r', '\n')
-			}
+			want := wantRoundTrip([]byte(in))
 			if !bytes.Equal(got, want) {
 				t.Fatalf("input %q readSize %d: unstuff(stuff(x)) = %q, want %q", in, readSize, got, want)
 			}
+		}
+	}
+}
+
+// normalizeCRLF is a reference implementation of the writer's line-ending
+// normalisation, written independently of the filter so the round-trip
+// property is checked against a statement of the transform rather than
+// against the transform checking itself.
+func normalizeCRLF(in []byte) []byte {
+	out := make([]byte, 0, len(in))
+	for i := 0; i < len(in); i++ {
+		switch in[i] {
+		case '\r':
+			out = append(out, '\r', '\n')
+			if i+1 < len(in) && in[i+1] == '\n' {
+				i++ // CRLF pair: consume both, emit one terminator
+			}
+		case '\n':
+			out = append(out, '\r', '\n')
+		default:
+			out = append(out, in[i])
+		}
+	}
+	return out
+}
+
+// wantRoundTrip states what unstuff(stuff(x)) must equal. Since the writer
+// normalises, the identity is unstuff(stuff(x)) == normalizeCRLF(x), not
+// == x. Close appends a CRLF only when content was written that did not
+// already end in one; empty content round-trips to empty, because it stuffs
+// to a bare ".CRLF" terminator and demanding a CRLF back would assert that
+// an empty message gains a blank line.
+func wantRoundTrip(in []byte) []byte {
+	want := normalizeCRLF(in)
+	if len(want) > 0 && want[len(want)-1] != '\n' {
+		want = append(want, '\r', '\n')
+	}
+	return want
+}
+
+// TestDotUnstuffRejectsBareLFTerminator is the receiving half of the
+// smuggling fix. RFC 5321 §4.1.1.4: the sequence "<LF>.<LF>" MUST NOT be
+// treated as equivalent to "<CRLF>.<CRLF>" as the end of mail data
+// indication.
+func TestDotUnstuffRejectsBareLFTerminator(t *testing.T) {
+	for _, stream := range []string{".\n", "content\r\n.\n", "content\n.\n"} {
+		lr := NewLineReader(strings.NewReader(stream))
+		ur := NewDotUnstuffReader(lr)
+		_, err := io.ReadAll(ur)
+		if !errors.Is(err, ErrBareLFTerminator) {
+			t.Fatalf("stream %q: err = %v, want ErrBareLFTerminator", stream, err)
 		}
 	}
 }
