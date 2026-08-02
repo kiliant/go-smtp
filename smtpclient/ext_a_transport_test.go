@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,54 @@ func TestBinaryMIMERejectsDataBeforeWriting(t *testing.T) {
 	if _, err := c.Data(context.Background(), strings.NewReader("body"), nil); err == nil || !strings.Contains(err.Error(), "requires CHUNKING") {
 		t.Fatalf("Data error = %v, want BINARYMIME/CHUNKING error", err)
 	}
+}
+
+// TestBinaryMIMEStateDoesNotPinAbandonedConnection covers the audit finding
+// that BODY=BINARYMIME tracking state lived in a process-global
+// map[*Client]bool, cleared only by the next Mail() call or a successful
+// final BDAT chunk. A transaction abandoned after the mid-sequence BDAT
+// failure path (which does not reach either of those) used to keep its
+// *Client — and everything reachable from it, including the connection —
+// alive for the process lifetime, because a live map entry is itself a GC
+// root reference.
+//
+// The fix moved the flag onto the connection itself, so it is reclaimed
+// with the connection instead of being retained by package-global state.
+// This test proves that directly: it abandons a transaction with the flag
+// still set and confirms the connection becomes collectible once nothing
+// else in the test references it.
+func TestBinaryMIMEStateDoesNotPinAbandonedConnection(t *testing.T) {
+	raw, done := startFakeServer(t, []fakeStep{
+		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250-CHUNKING\r\n", "250 BINARYMIME\r\n")},
+		{command: "MAIL FROM:<sender@example.test> BODY=BINARYMIME", replies: fakeReplies("250 sender ok\r\n")},
+	}, nil)
+	defer done()
+	c, err := NewClient(context.Background(), raw, &ClientOptions{Identity: "client.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Body: smtp.BodyTypeBinaryMIME}}); err != nil {
+		t.Fatal(err)
+	}
+	if !binaryMailFor(c) {
+		t.Fatal("expected BINARYMIME state to be set before abandoning the transaction")
+	}
+
+	collected := make(chan struct{})
+	runtime.SetFinalizer(c.conn, func(*connection) { close(collected) })
+	// Abandon the transaction: never call Data/BDAT, never call Reset. The
+	// only remaining local references are dropped here.
+	c = nil
+
+	for i := 0; i < 200; i++ {
+		runtime.GC()
+		select {
+		case <-collected:
+			return
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	t.Fatal("connection was never collected: BINARYMIME state pinned it, which is the leak this test guards against")
 }
 
 func TestBDATOpaqueChunksAndZeroLengthTerminator(t *testing.T) {

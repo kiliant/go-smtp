@@ -15,8 +15,13 @@ import (
 )
 
 const (
-	defaultGreetingTimeout    = 5 * time.Minute
-	defaultMailTimeout        = 5 * time.Minute
+	defaultGreetingTimeout = 5 * time.Minute
+	defaultMailTimeout     = 5 * time.Minute
+	// defaultRCPTTimeout is a distinct constant from defaultMailTimeout even
+	// though RFC 5321 §4.5.3.2 gives both commands the same five-minute
+	// minimum. Keeping them separate means changing one default cannot
+	// silently move the other.
+	defaultRCPTTimeout        = 5 * time.Minute
 	defaultDataCommandTimeout = 2 * time.Minute
 	defaultDataBlockTimeout   = 3 * time.Minute
 	defaultDataFinalTimeout   = 10 * time.Minute
@@ -42,8 +47,15 @@ type connection struct {
 	// smtpUTF8 records whether the active transaction requested SMTPUTF8 so
 	// recipient path validation can enforce the MAIL/RCPT coupling.
 	smtpUTF8 bool
-	options  ClientOptions
-	pipeline pipeline
+	// binaryMIME records whether the active transaction requested BODY=
+	// BINARYMIME (RFC 3030) so DATA can enforce that only CHUNKING/BDAT may
+	// deliver its content. It lives here, as connection state, rather than in
+	// a package-level registry keyed by *Client, so an abandoned or failed
+	// transaction never pins a *Client for the process lifetime: it is freed
+	// along with the connection.
+	binaryMIME bool
+	options    ClientOptions
+	pipeline   pipeline
 }
 
 // Dial connects to opts.Address, reads the greeting, and negotiates ESMTP.
@@ -161,7 +173,7 @@ func (c *connection) mailTimeout() time.Duration {
 }
 
 func (c *connection) rcptTimeout() time.Duration {
-	return c.timeout(c.options.RCPTTimeout, defaultMailTimeout)
+	return c.timeout(c.options.RCPTTimeout, defaultRCPTTimeout)
 }
 
 func (c *connection) dataCommandTimeout() time.Duration {

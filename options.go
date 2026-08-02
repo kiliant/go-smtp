@@ -87,8 +87,11 @@ type RcptOptions struct {
 //
 // Callers constructing a TransportOptions literal must use keyed fields.
 type TransportOptions struct {
-	Size     *int64
-	Body     BodyType
+	// Size is the RFC 1870 SIZE= declaration. Nil omits it.
+	Size *int64
+	// Body is the RFC 6152/RFC 3030 BODY= value. Empty omits it.
+	Body BodyType
+	// SMTPUTF8 requests the RFC 6531 SMTPUTF8 MAIL parameter.
 	SMTPUTF8 bool
 	_        struct{}
 }
@@ -97,13 +100,21 @@ type TransportOptions struct {
 //
 // Callers constructing a DeliveryOptions literal must use keyed fields.
 type DeliveryOptions struct {
-	DSN           *DSNMailOptions
-	DeliverBy     *DeliverByOptions
+	// DSN configures RFC 3461 MAIL FROM parameters.
+	DSN *DSNMailOptions
+	// DeliverBy configures the RFC 2852 BY= parameter.
+	DeliverBy *DeliverByOptions
+	// FutureRelease configures RFC 4865 hold parameters.
 	FutureRelease *FutureReleaseOptions
-	MTPriority    MTPriority
-	RRVS          *RRVSOptions
-	RequireTLS    bool
-	_             struct{}
+	// MTPriority is the RFC 6710 MT-PRIORITY= value; zero omits it.
+	MTPriority MTPriority
+	// RRVS is invalid here: RFC 7293 defines RRVS= on RCPT TO. It is
+	// retained for source compatibility; Client.Mail returns an actionable
+	// error when it is set. Use RecipientDeliveryOptions.RRVS instead.
+	RRVS *RRVSOptions
+	// RequireTLS requests RFC 8689 REQUIRETLS.
+	RequireTLS bool
+	_          struct{}
 }
 
 // RecipientDeliveryOptions configures recipient-level delivery-control
@@ -111,7 +122,9 @@ type DeliveryOptions struct {
 //
 // Callers constructing a RecipientDeliveryOptions literal must use keyed fields.
 type RecipientDeliveryOptions struct {
-	DSN  *DSNRcptOptions
+	// DSN configures RFC 3461 RCPT TO parameters.
+	DSN *DSNRcptOptions
+	// RRVS configures the RFC 7293 RRVS= parameter.
 	RRVS *RRVSOptions
 	_    struct{}
 }
@@ -119,7 +132,9 @@ type RecipientDeliveryOptions struct {
 // DSNMailOptions configures DSN sender parameters.
 // Callers constructing a DSNMailOptions literal must use keyed fields.
 type DSNMailOptions struct {
-	Return     DSNReturn
+	// Return is the open RFC 3461 RET= value; empty omits it.
+	Return DSNReturn
+	// EnvelopeID is xtext-encoded as the RFC 3461 ENVID= value.
 	EnvelopeID string
 	_          struct{}
 }
@@ -127,32 +142,42 @@ type DSNMailOptions struct {
 // DSNRcptOptions configures DSN recipient parameters.
 // Callers constructing a DSNRcptOptions literal must use keyed fields.
 type DSNRcptOptions struct {
-	Notify       []DSNNotify
+	// Notify supplies open RFC 3461 NOTIFY= tokens. NEVER must be alone.
+	Notify []DSNNotify
+	// OriginalType is the ORCPT address type, such as "rfc822" or "utf-8".
 	OriginalType string
-	Original     string
-	_            struct{}
+	// Original is xtext-encoded as the ORCPT address value.
+	Original string
+	_        struct{}
 }
 
 // DeliverByOptions configures the DELIVERBY BY= parameter.
 // Callers constructing a DeliverByOptions literal must use keyed fields.
 type DeliverByOptions struct {
+	// Seconds is BY's relative deadline. It may be zero or negative only
+	// when Mode is "N"; values are limited to nine decimal digits.
 	Seconds int64
-	Mode    string
-	_       struct{}
+	// Mode is the required RFC 2852 by-mode: "N" or "R".
+	Mode string
+	_    struct{}
 }
 
 // FutureReleaseOptions configures mutually exclusive HOLDFOR and HOLDUNTIL.
 // Callers constructing a FutureReleaseOptions literal must use keyed fields.
 type FutureReleaseOptions struct {
+	// HoldForSeconds is the RFC 4865 HOLDFOR= delay; zero omits it.
 	HoldForSeconds int64
-	HoldUntil      string
-	_              struct{}
+	// HoldUntil is the RFC 4865 HOLDUNTIL= timestamp; empty omits it.
+	HoldUntil string
+	_         struct{}
 }
 
 // RRVSOptions configures RRVS=.
 // Callers constructing a RRVSOptions literal must use keyed fields.
 type RRVSOptions struct {
-	Timestamp   string
+	// Timestamp is the RFC 7293 recipient-valid-since time.
+	Timestamp string
+	// Disposition is the optional RFC 7293 "C" or "R" suffix.
 	Disposition string
 	_           struct{}
 }
@@ -160,16 +185,21 @@ type RRVSOptions struct {
 // LegacyOptions configures the implemented legacy MAIL parameters.
 // Callers constructing a LegacyOptions literal must use keyed fields.
 type LegacyOptions struct {
-	Solicit   string
+	// Solicit is the RFC 3865 SOLICIT= value.
+	Solicit string
+	// TransitID is the RFC 3885 TRANSID= value.
 	TransitID string
+	// Submitter is the RFC 4405 SUBMITTER= value.
 	Submitter string
-	ConPerm   bool
-	_         struct{}
+	// ConPerm requests RFC 4141 CONPERM.
+	ConPerm bool
+	_       struct{}
 }
 
 // RecipientLegacyOptions configures implemented legacy RCPT parameters.
 // Callers constructing a RecipientLegacyOptions literal must use keyed fields.
 type RecipientLegacyOptions struct {
+	// ConNeg requests RFC 4141 CONNEG on RCPT TO.
 	ConNeg bool
 	_      struct{}
 }

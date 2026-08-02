@@ -1,19 +1,19 @@
 package smtp
 
-// RecipientResult is the server's reply for a single recipient after
-// message content has been submitted. SMTP (RFC 5321 §4.1.1.4) sends one
-// reply for the whole message, applied here to every accepted recipient;
-// LMTP (RFC 2033 §4.2) sends one reply per recipient, in RCPT order, after
-// the final "." — and recipients can succeed or fail independently, which
-// SMTP cannot express.
+// RecipientResult is the server's reply for a recipient-associated command.
+// RcptBatch uses it for each RCPT command. After content submission, SMTP
+// (RFC 5321 §4.1.1.4) sends one reply for the whole message, applied here to
+// every accepted recipient; LMTP (RFC 2033 §4.2) sends one reply per recipient,
+// in RCPT order, after the final "." — and recipients can succeed or fail
+// independently, which SMTP cannot express.
 //
 // Callers constructing a RecipientResult literal — for example scripted
 // fake-server expectations — must use keyed fields.
 type RecipientResult struct {
 	// Recipient is the forward-path (RCPT TO address) this reply is for.
 	Recipient string
-	// Command is the command whose reply this is: "DATA" under plain
-	// SMTP/LMTP, or "BDAT" under CHUNKING (RFC 3030).
+	// Command is the command whose reply this is: "RCPT" for RcptBatch,
+	// "DATA" under plain SMTP/LMTP, or "BDAT" under CHUNKING (RFC 3030).
 	Command string
 	// Code is the three-digit reply code for this recipient (RFC 5321
 	// §4.2, RFC 2033 §4.2).
@@ -25,6 +25,37 @@ type RecipientResult struct {
 	Text string
 
 	_ struct{}
+}
+
+// RcptResult is the ordered outcome of an smtpclient RcptBatch call: one
+// RecipientResult for every requested forward-path, including rejections.
+// A transport or protocol failure still returns separately from the slice.
+type RcptResult []RecipientResult
+
+// AllAccepted reports whether every RCPT command succeeded. It reports false
+// for an empty result.
+func (r RcptResult) AllAccepted() bool {
+	if len(r) == 0 {
+		return false
+	}
+	for _, recipient := range r {
+		if !recipient.Accepted() {
+			return false
+		}
+	}
+	return true
+}
+
+// Errors returns the *Error for each rejected RCPT command in result order.
+// It returns an empty, non-nil slice when every recipient was accepted.
+func (r RcptResult) Errors() []*Error {
+	errs := make([]*Error, 0, len(r))
+	for _, recipient := range r {
+		if err := recipient.Err(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
 }
 
 // Accepted reports whether the server accepted the message for this

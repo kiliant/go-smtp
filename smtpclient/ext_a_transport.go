@@ -8,7 +8,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"sync"
 
 	smtp "github.com/kiliant/go-smtp"
 	"github.com/kiliant/go-smtp/internal/smtpwire"
@@ -19,26 +18,13 @@ const (
 	maxBDATChunkSize     = 64 << 20
 )
 
-// binaryMail tracks the one MAIL parameter whose validity depends on the
-// subsequent content command. It is deliberately kept private to this
-// extension: transaction state itself remains owned by T05.
-var binaryMail struct {
-	sync.Mutex
-	clients map[*Client]bool
-}
-
 func init() {
 	registerMailExtension("transport", transportMailParams)
 	registerDataExtension(transportData)
 }
 
 func transportMailParams(c *Client, path string, opts *smtp.MailOptions) ([]smtp.Param, error) {
-	binaryMail.Lock()
-	defer binaryMail.Unlock()
-	if binaryMail.clients == nil {
-		binaryMail.clients = make(map[*Client]bool)
-	}
-	delete(binaryMail.clients, c)
+	clearBinaryMail(c)
 	if hasNonASCII(path) && (opts == nil || opts.Transport == nil || !opts.Transport.SMTPUTF8) {
 		return nil, errors.New("smtpclient: UTF-8 MAIL path requires SMTPUTF8")
 	}
@@ -79,7 +65,9 @@ func transportMailParams(c *Client, path string, opts *smtp.MailOptions) ([]smtp
 			if !c.advertises(string(smtp.ExtChunking)) {
 				return nil, missingExtension(smtp.ExtChunking)
 			}
-			binaryMail.clients[c] = true
+			c.conn.mu.Lock()
+			c.conn.binaryMIME = true
+			c.conn.mu.Unlock()
 		}
 		params = append(params, smtp.Param{Keyword: "BODY", Value: body})
 	}
@@ -116,18 +104,23 @@ func parseSizeAdvertisement(c *Client) (maximum int64, stated bool, err error) {
 	if !ok {
 		return 0, false, missingExtension(smtp.ExtSize)
 	}
+	maximum, err = parseSizeParam(raw)
+	return maximum, true, err
+}
+
+func parseSizeParam(raw string) (int64, error) {
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
-		return 0, true, nil
+		return 0, nil
 	}
 	if len(fields) != 1 {
-		return 0, true, fmt.Errorf("smtpclient: malformed SIZE advertisement %q", raw)
+		return 0, fmt.Errorf("smtpclient: malformed SIZE advertisement %q", raw)
 	}
 	n, parseErr := strconv.ParseUint(fields[0], 10, 63)
 	if parseErr != nil {
-		return 0, true, fmt.Errorf("smtpclient: malformed SIZE advertisement %q: %w", raw, parseErr)
+		return 0, fmt.Errorf("smtpclient: malformed SIZE advertisement %q: %w", raw, parseErr)
 	}
-	return int64(n), true, nil
+	return int64(n), nil
 }
 
 func transportData(ctx context.Context, c *Client, r io.Reader, opts *DataOptions) (smtp.DataResult, bool, error) {
@@ -153,15 +146,15 @@ func transportData(ctx context.Context, c *Client, r io.Reader, opts *DataOption
 }
 
 func binaryMailFor(c *Client) bool {
-	binaryMail.Lock()
-	defer binaryMail.Unlock()
-	return binaryMail.clients[c]
+	c.conn.mu.Lock()
+	defer c.conn.mu.Unlock()
+	return c.conn.binaryMIME
 }
 
 func clearBinaryMail(c *Client) {
-	binaryMail.Lock()
-	delete(binaryMail.clients, c)
-	binaryMail.Unlock()
+	c.conn.mu.Lock()
+	c.conn.binaryMIME = false
+	c.conn.mu.Unlock()
 }
 
 func bdat(ctx context.Context, c *Client, r io.Reader, chunkSize int) (smtp.DataResult, bool, error) {

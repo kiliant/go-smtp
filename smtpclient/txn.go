@@ -53,7 +53,9 @@ func (c *Client) commandLocked(ctx context.Context, verb string, args []string, 
 
 // Reset abandons the current mail transaction using RSET (RFC 5321 §4.1.1.5).
 // It cannot recover a DATA transfer that was cancelled after content reached
-// the wire; see Client's cancellation contract.
+// the wire; see Client's cancellation contract. RFC 5321 places no
+// transaction restriction on RSET, so — like Noop — it is valid any time
+// after the greeting, whether or not a transaction is open.
 func (c *Client) Reset(ctx context.Context, opts *ResetOptions) error {
 	_ = opts
 	if c == nil || c.conn == nil {
@@ -61,7 +63,7 @@ func (c *Client) Reset(ctx context.Context, opts *ResetOptions) error {
 	}
 	c.conn.opMu.Lock()
 	defer c.conn.opMu.Unlock()
-	reply, err := c.commandLocked(ctx, "RSET", nil, c.conn.mailTimeout, stateTransaction)
+	reply, err := c.commandLocked(ctx, "RSET", nil, c.conn.mailTimeout, stateGreeted, stateTLS, stateAuthenticated, stateTransaction)
 	if err != nil {
 		return err
 	}
@@ -70,9 +72,15 @@ func (c *Client) Reset(ctx context.Context, opts *ResetOptions) error {
 	}
 	c.conn.mu.Lock()
 	if c.conn.state != stateClosed {
-		c.conn.state = c.conn.transactionBase
+		// transactionBase is only meaningful once a transaction is open; RSET
+		// issued outside one (now permitted, matching Noop) must not replace
+		// the current state with a stale or zero-value transactionBase.
+		if c.conn.state == stateTransaction {
+			c.conn.state = c.conn.transactionBase
+		}
 		c.conn.recipients = nil
 		c.conn.smtpUTF8 = false
+		c.conn.binaryMIME = false
 	}
 	c.conn.mu.Unlock()
 	return nil

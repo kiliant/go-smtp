@@ -53,7 +53,7 @@ func (c *Client) deliveryMailParams(path string, opts *smtp.MailOptions) ([]smtp
 		params = append(params, p)
 	}
 	if d.RRVS != nil {
-		return nil, errors.New("smtpclient: RRVS is a RCPT TO parameter; smtp.RecipientDeliveryOptions needs an RRVS field")
+		return nil, errors.New("smtpclient: RRVS (RFC 7293) is a RCPT-scoped parameter and is not valid on MAIL FROM; set it on RcptOptions.Delivery.RRVS instead")
 	}
 	if d.RequireTLS {
 		params = append(params, smtp.Param{Keyword: "REQUIRETLS"})
@@ -64,10 +64,12 @@ func (c *Client) deliveryMailParams(path string, opts *smtp.MailOptions) ([]smtp
 func dsnMailParams(d *smtp.DSNMailOptions) ([]smtp.Param, error) {
 	var params []smtp.Param
 	if d.Return != "" {
+		// RET's vocabulary is open-ended per docs/API-STABILITY.md §1b: a
+		// value this library does not model is still sent verbatim, gated
+		// only on the server having advertised DSN (enforced by encodeParams
+		// via parameterExtension). FULL and HDRS are the only values RFC 3461
+		// §4.3 registers today; that is not a reason to close the set.
 		v := strings.ToUpper(string(d.Return))
-		if v != string(smtp.DSNReturnFull) && v != string(smtp.DSNReturnHeaders) {
-			return nil, fmt.Errorf("smtpclient: invalid DSN RET value %q", d.Return)
-		}
 		params = append(params, smtp.Param{Keyword: "RET", Value: v})
 	}
 	if d.EnvelopeID != "" {
@@ -109,16 +111,20 @@ func (c *Client) dsnRcptParams(_ string, opts *smtp.RcptOptions) ([]smtp.Param, 
 	return params, nil
 }
 
+// dsnNotifyValue keeps NOTIFY's vocabulary open per docs/API-STABILITY.md
+// §1b: a token this library does not model still reaches the wire, gated
+// only on DSN having been advertised. It still enforces the two rules RFC
+// 3461 §4.1 actually requires — NOTIFY=NEVER must be used alone, and a
+// duplicate token is rejected — because those are semantic constraints, not
+// a closed set of known values.
 func dsnNotifyValue(notify []smtp.DSNNotify) (string, error) {
 	seen := make(map[string]bool)
 	var values []string
 	for _, part := range notify {
 		for _, v := range strings.Split(string(part), ",") {
 			v = strings.ToUpper(v)
-			switch v {
-			case "SUCCESS", "FAILURE", "DELAY", "NEVER":
-			default:
-				return "", fmt.Errorf("smtpclient: invalid DSN NOTIFY value %q", v)
+			if v == "" {
+				return "", errors.New("smtpclient: empty DSN NOTIFY value")
 			}
 			if seen[v] {
 				return "", fmt.Errorf("smtpclient: duplicate DSN NOTIFY value %q", v)
@@ -134,17 +140,30 @@ func dsnNotifyValue(notify []smtp.DSNNotify) (string, error) {
 }
 
 func (c *Client) deliverByParam(d *smtp.DeliverByOptions) (smtp.Param, error) {
-	if d.Seconds < 1 || d.Seconds > 999999999 {
-		return smtp.Param{}, errors.New("smtpclient: DELIVERBY seconds must be in 1..999999999")
-	}
+	// RFC 2852 §4: by-value = by-time ";" by-mode [by-trace] — by-mode is
+	// mandatory. Rather than guess a default, an unset Mode is rejected
+	// locally: "N" and "R" have materially different semantics (deadline
+	// notification vs. return-if-late) and picking one silently would change
+	// what the caller asked the server to do.
 	mode := strings.ToUpper(d.Mode)
-	if mode != "" && mode != "N" && mode != "R" {
+	switch mode {
+	case "N":
+		// RFC 2852 §4: "In the case of a by-mode of 'N', it is possible that
+		// by-time may be zero or negative. This is not an error." The by-time
+		// grammar is a signed value of at most nine digits either way.
+		if d.Seconds < -999999999 || d.Seconds > 999999999 {
+			return smtp.Param{}, errors.New("smtpclient: DELIVERBY seconds must be in -999999999..999999999")
+		}
+	case "R":
+		if d.Seconds < 1 || d.Seconds > 999999999 {
+			return smtp.Param{}, errors.New("smtpclient: DELIVERBY seconds must be in 1..999999999")
+		}
+	case "":
+		return smtp.Param{}, errors.New("smtpclient: DeliverByOptions.Mode is required (\"N\" or \"R\"); RFC 2852 §4 by-mode is mandatory")
+	default:
 		return smtp.Param{}, fmt.Errorf("smtpclient: invalid DELIVERBY mode %q", d.Mode)
 	}
-	v := strconv.FormatInt(d.Seconds, 10)
-	if mode != "" {
-		v += ";" + mode
-	}
+	v := strconv.FormatInt(d.Seconds, 10) + ";" + mode
 	if mode == "R" {
 		if params, ok := c.Extension(smtp.ExtDeliverBy); ok && params != "" {
 			minimum, err := strconv.ParseInt(params, 10, 64)

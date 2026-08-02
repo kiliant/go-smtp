@@ -122,13 +122,11 @@ func (c *Client) Auth(ctx context.Context, opts *AuthOptions) error {
 	for reply.Code == 334 {
 		challenge, err := decodeChallenge(reply.Text)
 		if err != nil {
-			c.conn.poison()
-			return transportError("AUTH", err)
+			return c.cancelAuth(ctx, transportError("AUTH", err))
 		}
 		response, done, err := mech.Next(challenge)
 		if err != nil {
-			c.conn.poison()
-			return fmt.Errorf("smtpclient: AUTH %s: %w", name, err)
+			return c.cancelAuth(ctx, fmt.Errorf("smtpclient: AUTH %s: %w", name, err))
 		}
 		if err := c.authResponse(ctx, encodeSASL(response)); err != nil {
 			return err
@@ -152,6 +150,32 @@ func (c *Client) Auth(ctx context.Context, opts *AuthOptions) error {
 	c.conn.mu.Unlock()
 	// RFC 4954 permits the extension list to change after authentication.
 	return c.ehloLocked(ctx)
+}
+
+// cancelAuth implements RFC 4954 §4: when the client must abort an
+// in-progress SASL exchange (a malformed challenge, or the mechanism
+// rejecting the server's data), it sends a lone "*" rather than dropping the
+// connection outright. The server is required to answer with 501; the
+// connection is poisoned only if it fails to, since at that point the
+// session state can no longer be trusted. cause is the original error that
+// triggered the cancellation and is always what Auth returns.
+func (c *Client) cancelAuth(ctx context.Context, cause error) error {
+	if err := c.authResponse(ctx, "*"); err != nil {
+		// authResponse already poisoned the connection on a transport failure.
+		return cause
+	}
+	reply, err := c.conn.pipeline.read(ctx, "AUTH", c.conn.mailTimeout())
+	if err != nil {
+		// pipeline.read already poisoned the connection.
+		return cause
+	}
+	if reply.Code != 501 {
+		// The server did not honour the RFC 4954 §4 cancellation contract:
+		// its reply cannot be trusted to reflect a clean, resynchronised
+		// session, so the connection is no longer safely reusable.
+		c.conn.poison()
+	}
+	return cause
 }
 
 func (c *Client) authResponse(ctx context.Context, response string) error {
