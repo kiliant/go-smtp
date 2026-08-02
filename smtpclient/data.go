@@ -49,7 +49,7 @@ func (c *Client) Data(ctx context.Context, r io.Reader, opts *DataOptions) (smtp
 	if err := invalidState("DATA", state, stateTransaction); err != nil {
 		return nil, err
 	}
-	if len(recipients) == 0 {
+	if len(recipients) == 0 && !c.conn.options.LMTP {
 		return nil, errors.New("smtpclient: DATA requires an accepted recipient")
 	}
 	replies, err := c.conn.pipeline.executeLocked(ctx, []queuedCommand{{verb: "DATA", syncPoint: true, timeout: c.conn.dataCommandTimeout()}})

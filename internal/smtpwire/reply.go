@@ -156,6 +156,12 @@ func NewLineReader(r io.Reader) *LineReader {
 	return &LineReader{src: r, br: bufio.NewReaderSize(r, defaultMaxReplyLineLength)}
 }
 
+// Buffered reports bytes already read ahead of the current protocol element.
+// Session code uses it only to detect unsolicited replies that would otherwise
+// be attributed to a later command; it never treats an empty buffer as proof
+// that the peer cannot send a delayed unsolicited reply.
+func (lr *LineReader) Buffered() int { return lr.br.Buffered() }
+
 // setDeadline applies t to the underlying reader if it is deadline-capable.
 // A zero t means "no deadline" and is a no-op. Readers that are not
 // deadline-capable silently do not get a deadline — the caller chose an

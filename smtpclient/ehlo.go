@@ -43,7 +43,7 @@ func (c *Client) ehloLocked(ctx context.Context) error {
 		verb: verb, args: []string{c.conn.identity()}, syncPoint: true, timeout: c.conn.mailTimeout(),
 	}})
 	if err != nil {
-		return err
+		return transportError(verb, err)
 	}
 	reply := replies[0]
 	if !c.conn.options.LMTP && (reply.Code == 500 || reply.Code == 502) {
@@ -51,13 +51,13 @@ func (c *Client) ehloLocked(ctx context.Context) error {
 	}
 	// EHLO establishes the extension table, so its failure cannot assume
 	// ENHANCEDSTATUSCODES even if this is a re-negotiation.
-	if err := unexpectedReply("EHLO", reply, false, 250); err != nil {
+	if err := unexpectedReply(verb, reply, false, 250); err != nil {
 		return err
 	}
 	parsed, err := smtpwire.ParseEHLOReply(reply.Lines)
 	if err != nil {
 		c.conn.poison()
-		return transportError("EHLO", err)
+		return transportError(verb, err)
 	}
 	exts := make(map[string]string, len(parsed.Extensions))
 	for _, ext := range parsed.Extensions {
