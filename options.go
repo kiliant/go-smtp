@@ -67,6 +67,9 @@ type RcptOptions struct {
 	// Delivery configures recipient-specific delivery-control parameters (T09).
 	// A nil value leaves them unused.
 	Delivery *RecipientDeliveryOptions
+	// Legacy configures recipient-scoped legacy extension parameters (T10).
+	// A nil value leaves them unused.
+	Legacy *RecipientLegacyOptions
 	// Extra carries esmtp-params this library does not model with a typed
 	// field. See MailOptions.Extra.
 	Extra []Param
@@ -160,7 +163,13 @@ type LegacyOptions struct {
 	Solicit   string
 	TransitID string
 	Submitter string
-	ConPerm   string
-	ConNeg    string
+	ConPerm   bool
 	_         struct{}
+}
+
+// RecipientLegacyOptions configures implemented legacy RCPT parameters.
+// Callers constructing a RecipientLegacyOptions literal must use keyed fields.
+type RecipientLegacyOptions struct {
+	ConNeg bool
+	_      struct{}
 }

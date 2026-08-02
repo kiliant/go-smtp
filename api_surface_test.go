@@ -55,6 +55,7 @@ var optionsExemptClientMethods = map[string]bool{}
 var nonBlockingClientMethods = map[string]bool{
 	"Close":     true,
 	"Extension": true,
+	"Limits":    true,
 }
 
 // internalPackageSuffixes are the internal/ import paths that must never
