@@ -44,6 +44,26 @@ type Server struct {
 	wg       sync.WaitGroup
 }
 
+// Pipe returns the client side of an in-memory connection served with the
+// selected scenario. It exercises the same protocol handler as Start without
+// consuming loopback ports, making it suitable for high-volume unit tests.
+// The cleanup function is idempotent and waits for the handler to exit.
+func Pipe(ctx context.Context, scenario Scenario) (net.Conn, func()) {
+	client, server := net.Pipe()
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	var once sync.Once
+	go func() {
+		defer close(finished)
+		serve(ctx, server, scenario, done)
+	}()
+	return client, func() {
+		once.Do(func() { close(done) })
+		_ = client.Close()
+		<-finished
+	}
+}
+
 // Start begins a loopback server for scenario. The listener accepts only local
 // test connections; callers should use Addr when constructing a client.
 func Start(ctx context.Context, scenario Scenario) (*Server, error) {
