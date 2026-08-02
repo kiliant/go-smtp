@@ -35,14 +35,18 @@ func (c *Client) ehlo(ctx context.Context) error {
 // ensure no command can be written between its 220 response, TLS handshake,
 // and mandatory replacement EHLO.
 func (c *Client) ehloLocked(ctx context.Context) error {
+	verb := "EHLO"
+	if c.conn.options.LMTP {
+		verb = "LHLO"
+	}
 	replies, err := c.conn.pipeline.executeLocked(ctx, []queuedCommand{{
-		verb: "EHLO", args: []string{c.conn.identity()}, syncPoint: true, timeout: c.conn.mailTimeout(),
+		verb: verb, args: []string{c.conn.identity()}, syncPoint: true, timeout: c.conn.mailTimeout(),
 	}})
 	if err != nil {
 		return err
 	}
 	reply := replies[0]
-	if reply.Code == 500 || reply.Code == 502 {
+	if !c.conn.options.LMTP && (reply.Code == 500 || reply.Code == 502) {
 		return c.heloLocked(ctx)
 	}
 	// EHLO establishes the extension table, so its failure cannot assume

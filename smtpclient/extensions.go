@@ -15,6 +15,7 @@ import (
 type mailExtensionEncoder func(*Client, *smtp.MailOptions) ([]smtp.Param, error)
 type rcptExtensionEncoder func(*Client, *smtp.RcptOptions) ([]smtp.Param, error)
 type dataExtensionHandler func(context.Context, *Client, io.Reader, *DataOptions) (smtp.DataResult, bool, error)
+type lmtpFinalReplyHandler func(context.Context, *Client, []string) (smtp.DataResult, bool, error)
 
 type namedMailEncoder struct {
 	name string
@@ -30,6 +31,7 @@ var extensionHooks struct {
 	mail []namedMailEncoder
 	rcpt []namedRcptEncoder
 	data dataExtensionHandler
+	lmtp lmtpFinalReplyHandler
 }
 
 func registerMailExtension(name string, fn mailExtensionEncoder) {
@@ -50,6 +52,12 @@ func registerDataExtension(fn dataExtensionHandler) {
 	extensionHooks.Lock()
 	defer extensionHooks.Unlock()
 	extensionHooks.data = fn
+}
+
+func registerLMTPFinalReplies(fn lmtpFinalReplyHandler) {
+	extensionHooks.Lock()
+	defer extensionHooks.Unlock()
+	extensionHooks.lmtp = fn
 }
 
 func (c *Client) extensionMailParams(opts *smtp.MailOptions) ([]smtp.Param, error) {
@@ -90,4 +98,14 @@ func extensionData(ctx context.Context, c *Client, r io.Reader, opts *DataOption
 		return nil, false, nil
 	}
 	return hook(ctx, c, r, opts)
+}
+
+func lmtpFinalReplies(ctx context.Context, c *Client, recipients []string) (smtp.DataResult, bool, error) {
+	extensionHooks.RLock()
+	hook := extensionHooks.lmtp
+	extensionHooks.RUnlock()
+	if hook == nil {
+		return nil, false, nil
+	}
+	return hook(ctx, c, recipients)
 }

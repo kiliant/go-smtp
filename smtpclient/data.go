@@ -95,6 +95,9 @@ func (c *Client) Data(ctx context.Context, r io.Reader, opts *DataOptions) (smtp
 		c.conn.poison()
 		return nil, err
 	}
+	if result, handled, err := lmtpFinalReplies(ctx, c, recipients); handled {
+		return result, err
+	}
 	reply, err := c.conn.pipeline.read(ctx, "DATA", c.conn.dataFinalTimeout())
 	if err != nil {
 		return nil, err

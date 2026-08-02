@@ -18,6 +18,10 @@ import (
 //
 // Callers constructing a ClientOptions literal must use keyed fields.
 type ClientOptions struct {
+	// LMTP selects RFC 2033 mode. The initial extension negotiation uses LHLO
+	// and never falls back to HELO; an SMTP peer is therefore rejected rather
+	// than silently treated as LMTP.
+	LMTP bool
 	// Address is the network address passed to DialContext, normally
 	// "host:port". It is deliberately separate from TLSServerName: delivery
 	// code may connect to an address selected for an MX while verifying the
