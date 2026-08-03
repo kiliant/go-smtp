@@ -65,6 +65,14 @@ func FuzzReplyReader(f *testing.F) {
 
 func FuzzEHLOParse(f *testing.F) {
 	f.Add(readFuzzSeed(f, "testdata/ehlo/extensions.txt"))
+	// Captures from the live podman matrix. T11 requires the corpus be seeded
+	// from real interop captures as well as invented shapes: real servers
+	// disagree in ways a hand-written seed does not anticipate — Postfix
+	// advertises a bare SIZE, Stalwart advertises SIZE with a value, and the
+	// keyword orderings differ. See testdata/ehlo/interop/README.md.
+	for _, server := range []string{"postfix", "exim", "stalwart", "maddy", "mailpit", "greenmail"} {
+		f.Add(readFuzzSeed(f, "testdata/ehlo/interop/"+server+".txt"))
+	}
 	f.Add("mail.example.test\nSIZE 10485760\nPIPELINING\n8BITMIME")
 	f.Add("mail.example.test Greetings\nAUTH PLAIN LOGIN")
 	f.Add("example.test\nLIMITS RCPTMAX=100 MAILMAX=1000")
