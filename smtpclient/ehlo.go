@@ -8,7 +8,7 @@ import (
 	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
-// Extension reports whether the server advertised ext and, when it did, its
+// Extension reports whether the server advertised the RFC 5321 EHLO ext and, when it did, its
 // raw parameter text. The raw text is retained rather than reconstructed from
 // split fields so a future extension with space-sensitive parameters is not
 // silently made unusable. ext is compared case-insensitively for convenience.

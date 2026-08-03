@@ -112,7 +112,7 @@ func (c EnhancedCode) Valid() bool {
 	return c.Class == 2 || c.Class == 4 || c.Class == 5
 }
 
-// String returns Raw when set, since that is the code exactly as the server
+// String returns Raw when set, preserving the RFC 3463 code exactly as the server
 // sent it; otherwise it formats Class.Subject.Detail, for an EnhancedCode a
 // caller constructed directly rather than parsed.
 //

@@ -7,9 +7,15 @@ coverage and a stable v1.0 are compatible goals rather than competing ones.
 import "github.com/kiliant/go-smtp/smtpclient"
 ```
 
-> **Status: pre-implementation.** The repository currently holds the plan —
-> architecture, API stability rules, RFC coverage, the interop matrix and the
-> task board. No code has been written. Start at `docs/tasks/BOARD.md`.
+> **Status: pre-v1 release-candidate ready.** The ESMTP/LMTP client,
+> authentication, transaction API, extension groups A–C, API freeze review,
+> fuzz targets, examples, release gates, and default seven-server
+> interoperability harness are implemented. Local CI-equivalent checks and
+> representative Postfix, Dovecot, and GreenMail interop runs pass. The new
+> GitHub PR and nightly workflows still need their first hosted runs before
+> those external checks can be claimed as operational evidence. LMTP and
+> authenticated submission also need a second independent server before their
+> coverage can be marked verified; see `docs/RFC-COVERAGE.md`.
 
 ## The design constraint
 
@@ -44,6 +50,11 @@ opts := &smtp.MailOptions{
     Extra: []smtp.Param{{Keyword: "FUTURE-EXT", Value: "1"}},
 }
 ```
+
+The peer must advertise `FUTURE-EXT` before `Mail` writes it. Set
+`AllowUnadvertisedParameters` only when independent knowledge of the peer makes
+that local check inappropriate. Values using RFC 3461 xtext can be prepared
+with `smtp.EncodeXtext`; see `examples/extra-parameter`.
 
 When that RFC is implemented later, it adds a typed field. Nothing that already
 compiles stops compiling. `context.Context` is the first parameter of every
@@ -106,6 +117,11 @@ reply to DATA" cannot be fixed after a freeze.
 | `CLAUDE.md` | Working rules for AI agents contributing here |
 
 ## Testing
+
+The runnable programs under `examples/` cover STARTTLS submission, implicit
+TLS, partial recipient rejection, streaming DATA and BDAT, LMTP, DSN, and the
+unmodelled-parameter escape hatch. They use placeholder endpoints and
+credentials and are compiled by `go test ./...`.
 
 ```bash
 go test ./...                                          # unit, no network

@@ -81,9 +81,11 @@ type RcptOptions struct {
 	_ struct{}
 }
 
-// TransportOptions configures SIZE, BODY, and SMTPUTF8 MAIL parameters.
+// TransportOptions configures RFC 1870 SIZE, RFC 6152/RFC 3030 BODY, and RFC
+// 6531 SMTPUTF8 MAIL parameters.
 // Size is nil when SIZE is omitted; a non-nil zero explicitly declares an
 // empty message.
+// A nil *TransportOptions means defaults and omits these parameters.
 //
 // Callers constructing a TransportOptions literal must use keyed fields.
 type TransportOptions struct {
@@ -96,7 +98,9 @@ type TransportOptions struct {
 	_        struct{}
 }
 
-// DeliveryOptions configures sender-level delivery-control extensions.
+// DeliveryOptions configures sender-level delivery-control extensions from RFC
+// 3461, RFC 2852, RFC 4865, RFC 6710, RFC 7293, and RFC 8689.
+// A nil *DeliveryOptions means defaults and leaves these extensions unused.
 //
 // Callers constructing a DeliveryOptions literal must use keyed fields.
 type DeliveryOptions struct {
@@ -143,7 +147,8 @@ type DeliveryOptions struct {
 }
 
 // RecipientDeliveryOptions configures recipient-level delivery-control
-// extensions.
+// extensions from RFC 3461 and RFC 7293.
+// A nil *RecipientDeliveryOptions means defaults and omits these parameters.
 //
 // Callers constructing a RecipientDeliveryOptions literal must use keyed fields.
 type RecipientDeliveryOptions struct {
@@ -154,7 +159,8 @@ type RecipientDeliveryOptions struct {
 	_    struct{}
 }
 
-// DSNMailOptions configures DSN sender parameters.
+// DSNMailOptions configures RFC 3461 DSN sender parameters.
+// A nil *DSNMailOptions means defaults and omits DSN sender parameters.
 // Callers constructing a DSNMailOptions literal must use keyed fields.
 type DSNMailOptions struct {
 	// Return is the open RFC 3461 RET= value; empty omits it.
@@ -164,7 +170,8 @@ type DSNMailOptions struct {
 	_          struct{}
 }
 
-// DSNRcptOptions configures DSN recipient parameters.
+// DSNRcptOptions configures RFC 3461 DSN recipient parameters.
+// A nil *DSNRcptOptions means defaults and omits DSN recipient parameters.
 // Callers constructing a DSNRcptOptions literal must use keyed fields.
 type DSNRcptOptions struct {
 	// Notify supplies open RFC 3461 NOTIFY= tokens. NEVER must be alone.
@@ -176,7 +183,8 @@ type DSNRcptOptions struct {
 	_        struct{}
 }
 
-// DeliverByOptions configures the DELIVERBY BY= parameter.
+// DeliverByOptions configures the RFC 2852 DELIVERBY BY= parameter.
+// A nil *DeliverByOptions means defaults and omits BY=.
 // Callers constructing a DeliverByOptions literal must use keyed fields.
 type DeliverByOptions struct {
 	// Seconds is BY's relative deadline. It may be zero or negative only
@@ -187,7 +195,9 @@ type DeliverByOptions struct {
 	_    struct{}
 }
 
-// FutureReleaseOptions configures mutually exclusive HOLDFOR and HOLDUNTIL.
+// FutureReleaseOptions configures RFC 4865 mutually exclusive HOLDFOR and
+// HOLDUNTIL parameters.
+// A nil *FutureReleaseOptions means defaults and omits both parameters.
 // Callers constructing a FutureReleaseOptions literal must use keyed fields.
 type FutureReleaseOptions struct {
 	// HoldForSeconds is the RFC 4865 HOLDFOR= delay; zero omits it.
@@ -197,7 +207,8 @@ type FutureReleaseOptions struct {
 	_         struct{}
 }
 
-// RRVSOptions configures RRVS=.
+// RRVSOptions configures RFC 7293 RRVS=.
+// A nil *RRVSOptions means defaults and omits RRVS=.
 // Callers constructing a RRVSOptions literal must use keyed fields.
 type RRVSOptions struct {
 	// Timestamp is the RFC 7293 recipient-valid-since time.
@@ -207,7 +218,9 @@ type RRVSOptions struct {
 	_           struct{}
 }
 
-// LegacyOptions configures the implemented legacy MAIL parameters.
+// LegacyOptions configures implemented RFC 3865, RFC 3885, RFC 4405, and RFC
+// 4141 legacy MAIL parameters.
+// A nil *LegacyOptions means defaults and omits these parameters.
 // Callers constructing a LegacyOptions literal must use keyed fields.
 type LegacyOptions struct {
 	// Solicit is the RFC 3865 SOLICIT= value.
@@ -221,7 +234,9 @@ type LegacyOptions struct {
 	_       struct{}
 }
 
-// RecipientLegacyOptions configures implemented legacy RCPT parameters.
+// RecipientLegacyOptions configures implemented RFC 4141 legacy RCPT
+// parameters.
+// A nil *RecipientLegacyOptions means defaults and omits these parameters.
 // Callers constructing a RecipientLegacyOptions literal must use keyed fields.
 type RecipientLegacyOptions struct {
 	// ConNeg requests RFC 4141 CONNEG on RCPT TO.

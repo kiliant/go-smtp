@@ -8,7 +8,7 @@ import (
 	smtp "github.com/kiliant/go-smtp"
 )
 
-// Recipient is one forward-path and its per-recipient ESMTP parameters for
+// Recipient is one RFC 5321 forward-path and its per-recipient ESMTP parameters for
 // RcptBatch. Address is supplied without angle brackets.
 //
 // Callers constructing a Recipient literal must use keyed fields.
@@ -21,7 +21,8 @@ type Recipient struct {
 	_       struct{}
 }
 
-// RcptBatchOptions configures RcptBatch. A nil *RcptBatchOptions is valid.
+// RcptBatchOptions configures RFC 5321/RFC 2920 RcptBatch. A nil
+// *RcptBatchOptions means defaults.
 //
 // Callers constructing a RcptBatchOptions literal must use keyed fields.
 type RcptBatchOptions struct{ _ struct{} }

@@ -1,8 +1,11 @@
 // Package smtpclient implements an ESMTP and LMTP client.
 //
 // A Client speaks to a caller-supplied endpoint. It intentionally does not
-// perform MX lookup, MTA-STS, DANE, or any other transport-policy work; those
-// belong to the post-v1 delivery layer described in docs/ARCHITECTURE.md.
+// resolve MX records or implement MTA-STS (RFC 8461), DANE (RFC 7672), or any
+// other transport-policy work; those belong to the post-v1 smtpdeliver package
+// described in docs/ARCHITECTURE.md. It does not compose MIME (RFC 2045–2049)
+// or sign DKIM (RFC 6376); use dedicated message libraries and pass their bytes
+// to Data.
 package smtpclient
 
 import (
@@ -13,8 +16,8 @@ import (
 	"time"
 )
 
-// ClientOptions configures connection construction. A nil *ClientOptions is
-// valid and uses the documented defaults.
+// ClientOptions configures RFC 5321/RFC 2033 connection construction. A nil
+// *ClientOptions means the documented defaults.
 //
 // Callers constructing a ClientOptions literal must use keyed fields.
 type ClientOptions struct {
@@ -86,8 +89,9 @@ type ClientOptions struct {
 	_ struct{}
 }
 
-// StartTLSOptions configures a STARTTLS upgrade. A nil *StartTLSOptions is
-// valid and inherits TLS configuration from ClientOptions.
+// StartTLSOptions configures an RFC 3207 STARTTLS upgrade. A nil
+// *StartTLSOptions means defaults and inherits TLS configuration from
+// ClientOptions.
 //
 // Callers constructing a StartTLSOptions literal must use keyed fields.
 type StartTLSOptions struct {
@@ -102,7 +106,7 @@ type StartTLSOptions struct {
 	_ struct{}
 }
 
-// Client is one SMTP session. It is safe for concurrent callers: commands are
+// Client is one RFC 5321 SMTP or RFC 2033 LMTP session. It is safe for concurrent callers: commands are
 // serialized through one FIFO reply queue because SMTP replies are ordered,
 // not multiplexed.
 //
@@ -116,7 +120,7 @@ type Client struct {
 
 var errNilClient = errors.New("smtpclient: nil Client")
 
-// Close sends QUIT when the session is usable, then closes its underlying
+// Close sends RFC 5321 QUIT when the session is usable, then closes its underlying
 // connection. It is safe to call more than once and implements io.Closer.
 func (c *Client) Close() error {
 	if c == nil || c.conn == nil {

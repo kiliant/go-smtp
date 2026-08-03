@@ -10,7 +10,8 @@ import (
 	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
-// DataOptions configures Data. A nil *DataOptions is valid.
+// DataOptions configures RFC 5321 DATA or RFC 3030 BDAT. A nil *DataOptions
+// means defaults and selects DATA.
 //
 // Callers constructing a DataOptions literal must use keyed fields.
 type DataOptions struct {

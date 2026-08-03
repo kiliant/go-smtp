@@ -58,7 +58,7 @@ type connection struct {
 	pipeline   pipeline
 }
 
-// Dial connects to opts.Address, reads the greeting, and negotiates ESMTP.
+// Dial connects to opts.Address, reads the RFC 5321 greeting, and negotiates ESMTP.
 // It uses cleartext unless opts.ImplicitTLS is set.
 func Dial(ctx context.Context, opts *ClientOptions) (*Client, error) {
 	if err := ctx.Err(); err != nil {
@@ -88,7 +88,7 @@ func Dial(ctx context.Context, opts *ClientOptions) (*Client, error) {
 	return client, nil
 }
 
-// NewClient starts an SMTP session on an established connection. It preserves
+// NewClient starts an RFC 5321 SMTP or RFC 2033 LMTP session on an established connection. It preserves
 // connection injection for callers such as the future delivery layer. When
 // opts.ImplicitTLS is set, conn is first wrapped in TLS before its greeting is
 // read.

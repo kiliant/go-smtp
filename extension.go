@@ -106,7 +106,7 @@ const (
 	// ExtCheckpoint is CHECKPOINT (RFC 1845). Deferred: no known server
 	// support.
 	ExtCheckpoint Extension = "CHECKPOINT"
-	// ExtVerb is VERB, sendmail's verbose mode. Not defined by any RFC
+	// ExtVerb is VERB, sendmail's verbose mode. It has no RFC definition
 	// (Eric Allman / sendmail extension). Deferred.
 	ExtVerb Extension = "VERB"
 	// ExtOnex is ONEX, one-transaction-only. Not defined by any RFC (Eric

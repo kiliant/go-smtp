@@ -5,17 +5,17 @@ import (
 	"errors"
 )
 
-// VerifyOptions configures Verify. A nil *VerifyOptions is valid.
+// VerifyOptions configures RFC 5321 VRFY. A nil *VerifyOptions means defaults.
 //
 // Callers constructing a VerifyOptions literal must use keyed fields.
 type VerifyOptions struct{ _ struct{} }
 
-// ExpandOptions configures Expand. A nil *ExpandOptions is valid.
+// ExpandOptions configures RFC 5321 EXPN. A nil *ExpandOptions means defaults.
 //
 // Callers constructing an ExpandOptions literal must use keyed fields.
 type ExpandOptions struct{ _ struct{} }
 
-// HelpOptions configures Help. A nil *HelpOptions is valid.
+// HelpOptions configures RFC 5321 HELP. A nil *HelpOptions means defaults.
 //
 // Callers constructing a HelpOptions literal must use keyed fields.
 type HelpOptions struct{ _ struct{} }

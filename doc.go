@@ -15,4 +15,11 @@
 // docs/RFC-COVERAGE.md at the module root; every RFC number cited in this
 // package's doc comments is checked against that file, not recalled from
 // memory.
+//
+// Scope: smtp and smtpclient speak to caller-supplied endpoints. They do not
+// resolve MX records or implement MTA-STS (RFC 8461) or DANE (RFC 7672); those
+// transport-policy concerns belong in the post-v1 smtpdeliver package described
+// by docs/ARCHITECTURE.md. They also do not compose MIME (RFC 2045–2049) or sign
+// DKIM (RFC 6376); callers should use dedicated message-building and signing
+// libraries before handing the resulting bytes to smtpclient.
 package smtp

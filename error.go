@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Error is the single error type for every protocol failure this module
+// Error is the single error type for every RFC 5321 and RFC 2033 protocol failure this module
 // surfaces, per docs/API-STABILITY.md §5. Extensions only ever add reply
 // codes and enhanced-status detail values — a data change — so they never
 // need a distinct error type; per-recipient failures are a collection of
@@ -35,7 +35,7 @@ type Error struct {
 	_ struct{}
 }
 
-// Error implements the error interface. It formats as
+// Error implements the error interface for RFC 5321/RFC 2033 failures. It formats as
 // "COMMAND: code enhanced text: cause", omitting any part that is empty and
 // never introducing a separator next to nothing.
 func (e *Error) Error() string {
@@ -79,7 +79,8 @@ func (e *Error) Error() string {
 	return e.Command + ": " + body.String()
 }
 
-// Unwrap returns Err, so errors.Is and errors.As see through an *Error to
+// Unwrap returns the underlying RFC 5321/RFC 2033 transport or protocol Err,
+// so errors.Is and errors.As see through an *Error to
 // its underlying cause when there is one.
 func (e *Error) Unwrap() error { return e.Err }
 

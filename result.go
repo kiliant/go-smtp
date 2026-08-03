@@ -27,12 +27,12 @@ type RecipientResult struct {
 	_ struct{}
 }
 
-// RcptResult is the ordered outcome of an smtpclient RcptBatch call: one
+// RcptResult is the RFC 5321 ordered outcome of an smtpclient RcptBatch call: one
 // RecipientResult for every requested forward-path, including rejections.
 // A transport or protocol failure still returns separately from the slice.
 type RcptResult []RecipientResult
 
-// AllAccepted reports whether every RCPT command succeeded. It reports false
+// AllAccepted reports whether every RFC 5321 RCPT command succeeded. It reports false
 // for an empty result.
 func (r RcptResult) AllAccepted() bool {
 	if len(r) == 0 {
@@ -46,7 +46,7 @@ func (r RcptResult) AllAccepted() bool {
 	return true
 }
 
-// Errors returns the *Error for each rejected RCPT command in result order.
+// Errors returns the *Error for each rejected RFC 5321 RCPT command in result order.
 // It returns an empty, non-nil slice when every recipient was accepted.
 func (r RcptResult) Errors() []*Error {
 	errs := make([]*Error, 0, len(r))
@@ -62,7 +62,7 @@ func (r RcptResult) Errors() []*Error {
 // recipient: a 2yz reply code (RFC 5321 §4.2.1).
 func (r RecipientResult) Accepted() bool { return r.Code >= 200 && r.Code < 300 }
 
-// Err returns this recipient's reply as an *Error, or nil when Accepted
+// Err returns this recipient's RFC 5321 or RFC 2033 reply as an *Error, or nil when Accepted
 // reports true.
 //
 // It returns the concrete *Error rather than error so callers can reach Code
@@ -91,7 +91,7 @@ func (r RecipientResult) Err() *Error {
 // method in the library.
 type DataResult []RecipientResult
 
-// AllAccepted reports whether every recipient in d was Accepted. It reports
+// AllAccepted reports whether every RFC 5321 or RFC 2033 recipient in d was Accepted. It reports
 // false for an empty DataResult, since there is then nothing to have
 // accepted.
 func (d DataResult) AllAccepted() bool {
@@ -106,7 +106,7 @@ func (d DataResult) AllAccepted() bool {
 	return true
 }
 
-// Errors returns the *Error for each rejected recipient in d, in DataResult
+// Errors returns the *Error for each rejected RFC 5321 or RFC 2033 recipient in d, in DataResult
 // order. It returns an empty, non-nil slice when every recipient succeeded.
 func (d DataResult) Errors() []*Error {
 	errs := make([]*Error, 0, len(d))

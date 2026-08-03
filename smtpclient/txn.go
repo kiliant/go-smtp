@@ -9,17 +9,17 @@ import (
 	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
-// ResetOptions configures Reset. A nil *ResetOptions is valid.
+// ResetOptions configures RFC 5321 RSET. A nil *ResetOptions means defaults.
 //
 // Callers constructing a ResetOptions literal must use keyed fields.
 type ResetOptions struct{ _ struct{} }
 
-// NoopOptions configures Noop. A nil *NoopOptions is valid.
+// NoopOptions configures RFC 5321 NOOP. A nil *NoopOptions means defaults.
 //
 // Callers constructing a NoopOptions literal must use keyed fields.
 type NoopOptions struct{ _ struct{} }
 
-// QuitOptions configures Quit. A nil *QuitOptions is valid.
+// QuitOptions configures RFC 5321 QUIT. A nil *QuitOptions means defaults.
 //
 // Callers constructing a QuitOptions literal must use keyed fields.
 type QuitOptions struct{ _ struct{} }

@@ -7,7 +7,7 @@ import (
 	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
-// TraceDirection reports which side of the conversation produced a traced
+// TraceDirection reports which side of the RFC 5321 conversation produced a traced
 // line.
 //
 // It is a string type rather than an enumeration for the reason given in
@@ -18,13 +18,13 @@ import (
 type TraceDirection string
 
 const (
-	// TraceSent marks a line this client wrote to the server.
+	// TraceSent marks an RFC 5321 line this client wrote to the server.
 	TraceSent TraceDirection = "sent"
-	// TraceReceived marks a line this client read from the server.
+	// TraceReceived marks an RFC 5321 line this client read from the server.
 	TraceReceived TraceDirection = "received"
 )
 
-// TraceEvent is one protocol line exchanged with the server, as handed to
+// TraceEvent is one RFC 5321 protocol line exchanged with the server, as handed to
 // ClientOptions.Trace.
 //
 // Line never carries a trailing CRLF. A reply keeps its three-digit code and,

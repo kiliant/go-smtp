@@ -14,8 +14,11 @@ import (
 //
 // Callers constructing a Limits literal must use keyed fields.
 type Limits struct {
-	MailMax       uint32
-	RcptMax       uint32
+	// MailMax is the RFC 9422 MAILMAX transaction limit.
+	MailMax uint32
+	// RcptMax is the RFC 9422 RCPTMAX recipient limit.
+	RcptMax uint32
+	// RcptDomainMax is the RFC 9422 RCPTDOMAINMAX recipient-domain limit.
 	RcptDomainMax uint32
 	_             struct{}
 }

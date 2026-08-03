@@ -9,12 +9,12 @@ import (
 	smtp "github.com/kiliant/go-smtp"
 )
 
-// ETRNOptions configures ETRN. A nil *ETRNOptions is valid.
+// ETRNOptions configures RFC 1985 ETRN. A nil *ETRNOptions means defaults.
 //
 // Callers constructing an ETRNOptions literal must use keyed fields.
 type ETRNOptions struct{ _ struct{} }
 
-// ATRNOptions configures ATRN. A nil *ATRNOptions is valid.
+// ATRNOptions configures RFC 2645 ATRN. A nil *ATRNOptions means defaults.
 //
 // Callers constructing an ATRNOptions literal must use keyed fields.
 type ATRNOptions struct{ _ struct{} }

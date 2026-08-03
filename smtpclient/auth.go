@@ -16,13 +16,14 @@ import (
 
 const maxAuthChallenge = 16 << 10
 
-// AuthOptions configures RFC 4954 authentication. A nil *AuthOptions is valid,
-// but cannot authenticate because it has no credentials.
+// AuthOptions configures RFC 4954 authentication. A nil *AuthOptions means
+// defaults, but cannot authenticate because the defaults contain no credentials.
 //
 // Callers constructing an AuthOptions literal must use keyed fields.
 type AuthOptions struct {
-	// Username and Password are used by password mechanisms.
+	// Username is the RFC 4954 SASL authentication identity used by password mechanisms.
 	Username string
+	// Password is the RFC 4954 SASL secret used by password mechanisms.
 	Password string
 	// AuthorizationID is the SASL authorization identity. Empty normally asks
 	// the server to use Username. For EXTERNAL it is the asserted identity.
