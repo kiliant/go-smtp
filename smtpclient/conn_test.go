@@ -300,6 +300,32 @@ func TestPipelineSyncPointsAreStructural(t *testing.T) {
 	}
 }
 
+// TestPipelineSyncPointsEnforcedOnProductionPath exists because the test
+// above is not enough on its own. An audit found validateGroup was reachable
+// only through execute, which no production code calls: every command entry
+// point in the package calls executeLocked, having taken conn.opMu itself. A
+// guard only its own unit test can reach is not enforcement, so this asserts
+// the check on the path the package actually uses.
+func TestPipelineSyncPointsEnforcedOnProductionPath(t *testing.T) {
+	server, wait := startFakeServer(t, []fakeStep{
+		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250 PIPELINING\r\n")},
+	}, nil)
+	defer wait()
+	client, err := NewClient(context.Background(), server, &ClientOptions{Identity: "client.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.conn.opMu.Lock()
+	defer client.conn.opMu.Unlock()
+	_, err = client.conn.pipeline.executeLocked(context.Background(), []queuedCommand{
+		{verb: "NOOP", timeout: time.Second},
+		{verb: "MAIL", timeout: time.Second},
+	})
+	if err == nil || !strings.Contains(err.Error(), "sync point") {
+		t.Fatalf("executeLocked accepted a mid-group sync point: %v", err)
+	}
+}
+
 func TestPipelineCorrelatesMultilineRepliesByCommand(t *testing.T) {
 	server, wait := startFakeServer(t, []fakeStep{
 		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250 PIPELINING\r\n")},

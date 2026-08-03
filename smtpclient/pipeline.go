@@ -54,18 +54,27 @@ func (p *pipeline) execute(ctx context.Context, commands []queuedCommand) ([]smt
 	if len(commands) == 0 {
 		return nil, nil
 	}
-	if err := validateGroup(commands); err != nil {
-		return nil, err
-	}
 	p.conn.opMu.Lock()
 	defer p.conn.opMu.Unlock()
 	return p.executeLocked(ctx, commands)
 }
 
-// executeLocked is execute for the one caller (Close) that already owns the
-// operation lock. Keeping the queue logic in one place avoids a subtly
-// different shutdown path.
+// executeLocked is execute for the callers that already own the operation
+// lock, which is every command entry point in the package: each acquires
+// conn.opMu itself so the whole command — not merely the queue group — is
+// atomic to a Client caller. Keeping the queue logic in one place avoids a
+// subtly different shutdown path.
+//
+// validateGroup runs here rather than in execute because execute is not on
+// any production path; enforcing sync points only there left the guard
+// reachable from tests alone, which is not enforcement.
 func (p *pipeline) executeLocked(ctx context.Context, commands []queuedCommand) ([]smtpwire.Reply, error) {
+	if len(commands) == 0 {
+		return nil, nil
+	}
+	if err := validateGroup(commands); err != nil {
+		return nil, err
+	}
 	if p.conn.closed() {
 		return nil, errors.New("smtpclient: connection is closed")
 	}
@@ -143,6 +152,7 @@ func (p *pipeline) write(ctx context.Context, cmd queuedCommand) error {
 		p.conn.poison()
 		return transportError(cmd.verb, err)
 	}
+	p.conn.trace(TraceSent, traceCommandLine(cmd))
 	return nil
 }
 
@@ -175,6 +185,9 @@ func (p *pipeline) read(ctx context.Context, command string, timeout time.Durati
 		p.conn.poison()
 		return smtpwire.Reply{}, transportError(command, err)
 	}
+	// Traced before the 421 check so a session the server tore down still
+	// shows the reply that ended it.
+	p.conn.trace(TraceReceived, traceReplyLine(reply))
 	if reply.Code == 421 {
 		p.conn.poison()
 		return smtpwire.Reply{}, replyError(command, reply, p.conn.enhancedStatusCodes())
