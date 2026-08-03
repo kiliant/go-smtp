@@ -9,19 +9,23 @@
 // profile is registered but Selected() excludes it unless the
 // interop_emulated build tag is present (see docs/INTEROP.md).
 //
-// NOT LIVE-VERIFIED under emulation this session: the demo image's account
-// provisioning (via its CLI, james-cli AddDomain/AddUser) is not yet driven
-// from this Containerfile.
+// The profile provisions example.test/interop@example.test through the image's
+// bundled james-cli after SMTP becomes ready, then reads delivery back over
+// implicit-TLS IMAP. Verified live under qemu emulation on 2026-08-03.
 package james
 
 import (
 	"context"
+	"fmt"
 
 	smtp "github.com/kiliant/go-smtp"
 	"github.com/kiliant/go-smtp/interop/harness"
 )
 
-const smtpPort = 25
+const (
+	smtpPort  = 25
+	imapsPort = 993
+)
 
 func init() {
 	harness.Register(harness.Profile{
@@ -29,7 +33,7 @@ func init() {
 		Tier: harness.Tier3,
 		Run: harness.RunConfig{
 			Image: "docker.io/apache/james:demo-3.8.2",
-			Ports: []int{smtpPort},
+			Ports: []int{smtpPort, imapsPort},
 		},
 		Ports: []harness.Port{
 			{Container: smtpPort, Kind: "smtp"},
@@ -44,8 +48,17 @@ func init() {
 }
 
 func newSink(ctx context.Context, h *harness.Handle) (harness.Sink, error) {
-	return harness.MaildirSink{
-		Exec: h,
-		Dir:  func(recipient string) string { return "/root/james-server-app/mail/" + recipient },
-	}, nil
+	// The demo image only seeds james.local. Use its supported CLI rather than
+	// weakening SMTP relay checks or pretending the JPA mailbox is a maildir.
+	if _, err := h.Exec(ctx, "james-cli", "AddDomain", interopDomain); err != nil {
+		return nil, fmt.Errorf("james: provisioning domain: %w", err)
+	}
+	if _, err := h.Exec(ctx, "james-cli", "AddUser", interopRecipient, interopPassword); err != nil {
+		return nil, fmt.Errorf("james: provisioning user: %w", err)
+	}
+	addr, ok := h.HostAddr(imapsPort)
+	if !ok {
+		return nil, fmt.Errorf("james: no host port resolved for IMAPS (container port %d)", imapsPort)
+	}
+	return &imapSink{addr: addr, password: interopPassword}, nil
 }

@@ -54,6 +54,7 @@ type Config struct {
 const (
 	defaultStartTimeout   = 60 * time.Second
 	defaultHealthTimeout  = 45 * time.Second
+	emulatedHealthTimeout = 90 * time.Second
 	defaultCommandTimeout = 10 * time.Second
 	defaultSinkTimeout    = 20 * time.Second
 	defaultStopTimeout    = 20 * time.Second
@@ -70,6 +71,12 @@ func LoadConfig() Config {
 		SinkTimeout:     defaultSinkTimeout,
 		StopTimeout:     defaultStopTimeout,
 		IncludeEmulated: emulatedBuildTag,
+	}
+	// Apache James runs an amd64 JVM through qemu on the arm64 development
+	// host. Its cold start is observably slower and more variable than every
+	// native profile; keep that cost behind the explicit build tag.
+	if emulatedBuildTag {
+		cfg.HealthTimeout = emulatedHealthTimeout
 	}
 	if raw := os.Getenv(EnvServerSubset); raw != "" {
 		cfg.Subset = splitSubset(raw)

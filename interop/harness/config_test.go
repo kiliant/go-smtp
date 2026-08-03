@@ -11,14 +11,18 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.StartTimeout != defaultStartTimeout {
 		t.Errorf("StartTimeout = %v, want %v", cfg.StartTimeout, defaultStartTimeout)
 	}
-	if cfg.HealthTimeout != defaultHealthTimeout {
-		t.Errorf("HealthTimeout = %v, want %v", cfg.HealthTimeout, defaultHealthTimeout)
+	wantHealthTimeout := defaultHealthTimeout
+	if emulatedBuildTag {
+		wantHealthTimeout = emulatedHealthTimeout
+	}
+	if cfg.HealthTimeout != wantHealthTimeout {
+		t.Errorf("HealthTimeout = %v, want %v", cfg.HealthTimeout, wantHealthTimeout)
 	}
 	if len(cfg.Subset) != 0 {
 		t.Errorf("Subset = %v, want empty", cfg.Subset)
 	}
-	if cfg.IncludeEmulated {
-		t.Error("IncludeEmulated = true by default, want false")
+	if cfg.IncludeEmulated != emulatedBuildTag {
+		t.Errorf("IncludeEmulated = %v, want build-tag value %v", cfg.IncludeEmulated, emulatedBuildTag)
 	}
 }
 

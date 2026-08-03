@@ -11,11 +11,37 @@
 // and a message seeded independently of go-smtp round-tripped through
 // GET /api/user/{email}/messages, whose "mimeMessage" field carries the raw
 // content (confirmed byte-preserving for a body line of exactly ".").
+//
+// Reset: GET /api/user/{email}/messages only ever advertises
+// "Allow: HEAD, GET, OPTIONS" (confirmed live with an OPTIONS probe against a
+// running container on 2026-08-03) — there is no per-recipient delete, so a
+// DELETE against that URL is a guaranteed 405, not a transient failure. The
+// JAX-RS resource embedded in the standalone jar
+// (com/icegreen/greenmail/standalone/GreenMailApiResource.class, inspected
+// directly since the image ships no separate API docs) does expose a real
+// purge, just scoped to the whole instance rather than one mailbox:
+//
+//	POST /api/mail/purge      -> purgeEmailFromAllMailboxes(), {"message":"Purged mails"}
+//	POST /api/service/reset   -> re-provisions from GreenMailConfiguration, {"message":"Performed reset"}
+//
+// Both were confirmed live: send a probe message, call the endpoint, refetch
+// (empty), send another probe, refetch (delivered) — so the configured
+// account survives either call. /api/mail/purge is used here because it only
+// touches mail, not the whole managed-server/user state /api/service/reset
+// reinitializes. It purges every mailbox, not just recipient's, which is
+// broader than the Sink.Reset(recipient) contract technically asks for; that
+// is harmless for this harness because every profile provisions exactly one
+// interop account and Reset is only ever called once, right after container
+// start, before any recipient has mail. A scenario suite exercising multiple
+// recipients concurrently in one GreenMail container would need to stop
+// relying on this method scoping by recipient at all.
 package greenmail
 
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	smtp "github.com/kiliant/go-smtp"
@@ -94,8 +120,29 @@ func (s *sink) Fetch(ctx context.Context, recipient string) ([]harness.Message, 
 	return msgs, nil
 }
 
+// Reset purges every message GreenMail is holding, for every mailbox, via
+// POST /api/mail/purge. recipient is unused: GreenMail's REST API (inspected
+// directly from the standalone jar's GreenMailApiResource, see the package
+// doc comment) advertises no per-recipient delete on
+// /api/user/{email}/messages — only HEAD, GET and OPTIONS — so a DELETE
+// there always fails with 405, and there is no narrower purge to call
+// instead. See the package doc comment for why an instance-wide purge is
+// still correct for how this harness uses Reset.
 func (s *sink) Reset(ctx context.Context, recipient string) error {
-	return harness.DeleteURL(ctx, s.messagesURL(recipient))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/api/mail/purge", nil)
+	if err != nil {
+		return fmt.Errorf("greenmail: building purge request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("greenmail: POST /api/mail/purge: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("greenmail: POST /api/mail/purge: unexpected status %s: %s", resp.Status, body)
+	}
+	return nil
 }
 
 func (s *sink) messagesURL(recipient string) string {
