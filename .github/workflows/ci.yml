@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  APIDIFF_VERSION: v0.0.0-20260709172345-9ea1abe57597
+  STATICCHECK_VERSION: v0.7.0
+
+jobs:
+  test:
+    name: Go ${{ matrix.go }} tests
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.25.x', '1.26.x']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false
+      - run: go test ./...
+
+  race:
+    name: Race detector
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.x
+          cache: false
+      - run: go test -race ./...
+
+  quality:
+    name: Formatting and static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.x
+          cache: false
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [[ -n "$unformatted" ]]; then
+            echo 'gofmt would change:' >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+      - run: go vet ./...
+      - name: Staticcheck 2026.1 (${{ env.STATICCHECK_VERSION }})
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
+          staticcheck ./...
+
+  examples:
+    name: Compile examples
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.x
+          cache: false
+      - run: go test ./examples/...
+
+  fuzz-smoke:
+    name: Fuzz smoke (60s per discovered target)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.x
+          cache: false
+      - run: .github/scripts/run-fuzz.sh 60s 2
+
+  apidiff:
+    name: API compatibility
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.x
+          cache: false
+      - name: Install pinned apidiff
+        run: go install golang.org/x/exp/cmd/apidiff@${APIDIFF_VERSION}
+      - name: Compare with latest release tag
+        id: apidiff
+        continue-on-error: true
+        run: .github/scripts/run-apidiff.sh apidiff-report.md
+      - name: Add report to job summary
+        if: always()
+        run: cat apidiff-report.md >>"$GITHUB_STEP_SUMMARY"
+      - name: Post or update pull-request report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/comment-apidiff.sh apidiff-report.md "$PR_NUMBER"
+      - name: Enforce post-v1 compatibility
+        if: always() && steps.apidiff.outcome == 'failure'
+        run: |
+          echo 'apidiff failed. Post-v1 incompatibilities and tool failures are blocking.' >&2
+          exit 1

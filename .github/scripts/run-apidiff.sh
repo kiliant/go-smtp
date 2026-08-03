@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+output=${1:-apidiff-report.md}
+module=$(go list -m -f '{{.Path}}')
+baseline=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)
+marker='<!-- go-smtp-apidiff -->'
+
+if [[ -z "$baseline" ]]; then
+  {
+    echo "$marker"
+    echo '## API compatibility report'
+    echo
+    echo '**Baseline:** none.'
+    echo
+    echo 'No `v*` release tag exists yet. This is an explicit pre-release baseline report, not a silently skipped comparison. The first release tag will become the baseline for subsequent pull requests.'
+  } >"$output"
+  echo "baseline=none" >>"${GITHUB_OUTPUT:-/dev/null}"
+  exit 0
+fi
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/go-smtp-apidiff.XXXXXX")
+trap 'rm -rf -- "$tmp"' EXIT
+mkdir "$tmp/old"
+git archive "$baseline" | tar -x -C "$tmp/old"
+
+(cd "$tmp/old" && apidiff -m -w "$tmp/old.export" "$module")
+apidiff -m -w "$tmp/new.export" "$module"
+apidiff -m "$tmp/old.export" "$tmp/new.export" >"$tmp/all.txt"
+apidiff -m -incompatible "$tmp/old.export" "$tmp/new.export" >"$tmp/incompatible.txt"
+
+{
+  echo "$marker"
+  echo '## API compatibility report'
+  echo
+  echo "**Baseline:** \`$baseline\`"
+  echo
+  if [[ -s "$tmp/all.txt" ]]; then
+    echo '```text'
+    sed -n '1,600p' "$tmp/all.txt"
+    echo '```'
+  else
+    echo 'No exported API differences.'
+  fi
+} >"$output"
+
+major=${baseline#v}
+major=${major%%.*}
+post_v1=false
+if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 1 )); then
+  post_v1=true
+fi
+{
+  echo "baseline=$baseline"
+  echo "post_v1=$post_v1"
+  if [[ -s "$tmp/incompatible.txt" ]]; then echo 'incompatible=true'; else echo 'incompatible=false'; fi
+} >>"${GITHUB_OUTPUT:-/dev/null}"
+
+if [[ "$post_v1" == true && -s "$tmp/incompatible.txt" ]]; then
+  echo "incompatible API changes relative to $baseline" >&2
+  cat "$tmp/incompatible.txt" >&2
+  exit 1
+fi
