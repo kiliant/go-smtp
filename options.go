@@ -112,7 +112,32 @@ type DeliveryOptions struct {
 	// retained for source compatibility; Client.Mail returns an actionable
 	// error when it is set. Use RecipientDeliveryOptions.RRVS instead.
 	RRVS *RRVSOptions
-	// RequireTLS requests RFC 8689 REQUIRETLS.
+	// RequireTLS requests RFC 8689 REQUIRETLS. It asks every hop from here to
+	// final delivery — not merely the connection to the immediate peer — to
+	// relay the message only over TLS, tagged with REQUIRETLS in turn, or
+	// else bounce it: the IANA registration text for the extension (RFC 8689
+	// §7) describes its behavior as causing the message "to require the use
+	// of TLS and tagging with REQUIRETLS for all onward relay." Because that
+	// promise is meaningless if this client's own session is not itself
+	// TLS-protected, RFC 8689 §2 makes that a precondition on the sender
+	// too: "This option MUST only be specified in the context of an SMTP
+	// session meeting the security requirements of REQUIRETLS: ... The
+	// session itself MUST employ TLS transmission." smtpclient enforces that
+	// one precondition locally and rejects RequireTLS when the session was
+	// not negotiated over STARTTLS or ClientOptions.ImplicitTLS; the RFC's
+	// remaining §2 preconditions (DNSSEC/MTA-STS validation of the next
+	// hop's MX record, certificate trust) describe an onward relay's own
+	// outbound leg and are out of this client's scope, per
+	// docs/ARCHITECTURE.md's deferral of MX/transport-policy decisions to
+	// the post-v1 smtpdeliver layer.
+	//
+	// RFC 8689 has no coupling to the DSN NOTIFY= parameter — the RFC never
+	// mentions NOTIFY. Its one DSN-related rule (§5) instead binds a server
+	// that later generates a non-delivery report for a REQUIRETLS message:
+	// that server must disregard a RET=FULL request in favor of RET=HDRS,
+	// and, unless redacted, must itself tag the resulting bounce with
+	// REQUIRETLS. Both are the receiving/relaying server's obligations, not
+	// something the sending client validates.
 	RequireTLS bool
 	_          struct{}
 }

@@ -100,9 +100,23 @@ Extensions that add `MAIL`/`RCPT` parameters influencing handling.
 | FUTURERELEASE | 4865 | done |
 | MT-PRIORITY | 6710 | done |
 | RRVS | 7293 | done |
-| REQUIRETLS | 8689 | done |
+| REQUIRETLS | 8689 | done [^requiretls] |
 | LIMITS | 9422 | done |
 | BURL | 4468 | done |
+
+[^requiretls]: RFC 8689 §2 requires that `REQUIRETLS` "MUST only be specified
+    in the context of an SMTP session meeting the security requirements of
+    REQUIRETLS", of which "the session itself MUST employ TLS transmission" is
+    the one precondition a client speaking to a caller-supplied endpoint can
+    observe locally; the client rejects the parameter over a cleartext session.
+    The remaining §2 preconditions concern the *next* hop and are transport
+    policy, which `docs/ARCHITECTURE.md` defers to the post-v1.0 delivery
+    layer. Note that RFC 8689 imposes no constraint coupling `REQUIRETLS` to
+    DSN `NOTIFY=` — the word does not appear in the document. Its only
+    DSN text is §5, which binds the server *generating* a bounce (`RET=HDRS`
+    in place of `RET=FULL`), not the original sender. An earlier audit note
+    asserted a `NOTIFY=` constraint; it was checked against the RFC text and
+    is wrong.
 
 ## Group C — legacy & niche (task T10)
 

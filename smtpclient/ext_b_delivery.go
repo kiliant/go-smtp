@@ -56,9 +56,49 @@ func (c *Client) deliveryMailParams(path string, opts *smtp.MailOptions) ([]smtp
 		return nil, errors.New("smtpclient: RRVS (RFC 7293) is a RCPT-scoped parameter and is not valid on MAIL FROM; set it on RcptOptions.Delivery.RRVS instead")
 	}
 	if d.RequireTLS {
+		// RFC 8689 §2: REQUIRETLS "MUST only be specified in the context of
+		// an SMTP session meeting the security requirements of REQUIRETLS",
+		// the first of which is "The session itself MUST employ TLS
+		// transmission." Sending REQUIRETLS over a session this client can
+		// see is not TLS-protected would ask the peer to honour a promise
+		// the client itself already broke, so it is rejected locally rather
+		// than left for a server that might not notice. The remaining §2
+		// preconditions — DNSSEC/MTA-STS validation of the *next* hop's MX
+		// record and certificate trust via a chain or DANE — govern a
+		// relay's outbound leg, not this session; they are exactly the
+		// transport-policy decisions CLAUDE.md defers to the post-v1
+		// smtpdeliver layer, so this client does not and must not police
+		// them here.
+		//
+		// This is not, despite a commonly repeated claim, coupled to the DSN
+		// NOTIFY= parameter: the word "NOTIFY" does not appear anywhere in
+		// RFC 8689. The RFC's only DSN interaction is §5 ("Non-delivery
+		// Message Handling"): a server that later generates a bounce for a
+		// REQUIRETLS-tagged message must disregard a RET=FULL request in
+		// favor of RET=HDRS, and, unless redacted, must itself tag that
+		// bounce with REQUIRETLS. Both are obligations on the server
+		// generating the DSN, not on this client acting as the original
+		// sender, so there is nothing to validate locally on RET= or
+		// NOTIFY= here.
+		if !c.requireTLSSessionSecured() {
+			return nil, errors.New("smtpclient: REQUIRETLS requires a TLS-protected session (RFC 8689 §2); negotiate STARTTLS or set ClientOptions.ImplicitTLS before requesting it")
+		}
 		params = append(params, smtp.Param{Keyword: "REQUIRETLS"})
 	}
 	return params, nil
+}
+
+// requireTLSSessionSecured reports whether the connection's current
+// transport is TLS, reusing the same *tls.Conn type assertion auth.go's
+// isTLS uses for its AllowInsecureAuth gate. This is deliberately the only
+// REQUIRETLS precondition from RFC 8689 §2 checked here: it is the one
+// precondition this client, speaking to a single caller-supplied endpoint,
+// can actually observe.
+func (c *Client) requireTLSSessionSecured() bool {
+	c.conn.mu.Lock()
+	raw := c.conn.raw
+	c.conn.mu.Unlock()
+	return isTLS(raw)
 }
 
 func dsnMailParams(d *smtp.DSNMailOptions) ([]smtp.Param, error) {

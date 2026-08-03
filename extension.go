@@ -69,7 +69,15 @@ const (
 	ExtMTPriority Extension = "MT-PRIORITY"
 	// ExtRRVS is RRVS, Require-Recipient-Valid-Since (RFC 7293).
 	ExtRRVS Extension = "RRVS"
-	// ExtRequireTLS is REQUIRETLS (RFC 8689).
+	// ExtRequireTLS is REQUIRETLS (RFC 8689). A server advertising it commits
+	// to enforcing TLS, with REQUIRETLS tagging, on *onward* relay of a
+	// tagged message — not merely on its connection to this client; RFC 8689
+	// §7's IANA registration describes the behavior as requiring "the use of
+	// TLS and tagging with REQUIRETLS for all onward relay." RFC 8689 has no
+	// interaction with the DSN NOTIFY= parameter (the word does not appear
+	// in the RFC); its one DSN-related rule, §5, binds the server that later
+	// generates a delivery-status notification for a REQUIRETLS message, not
+	// the sending client. See smtp.DeliveryOptions.RequireTLS.
 	ExtRequireTLS Extension = "REQUIRETLS"
 	// ExtLimits is LIMITS (RFC 9422).
 	ExtLimits Extension = "LIMITS"
