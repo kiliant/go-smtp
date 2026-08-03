@@ -73,6 +73,11 @@ reply to DATA" cannot be fixed after a freeze.
   project does not control.
 - **Safe against hostile servers.** Every parser is fuzzed; malformed input
   returns an error, never a panic.
+- **Diagnosable without leaking credentials.** An optional `Trace` hook reports
+  every command sent and reply received. SASL payloads — the AUTH initial
+  response, every continuation, and the server's challenges — are redacted
+  before the hook sees them, and that cannot be switched off. Message content
+  never passes through it.
 
 ## Non-goals
 

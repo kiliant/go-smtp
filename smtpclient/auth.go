@@ -196,6 +196,10 @@ func (c *Client) authResponse(ctx context.Context, response string) error {
 		c.conn.poison()
 		return transportError("AUTH", err)
 	}
+	// The whole line is a SASL payload — for PLAIN it is the password, and
+	// for the cancellation token "*" it is not worth distinguishing — so the
+	// whole line is redacted rather than any part of it echoed.
+	c.conn.trace(TraceSent, redactedPayload)
 	return nil
 }
 

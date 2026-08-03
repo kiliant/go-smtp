@@ -63,6 +63,25 @@ type ClientOptions struct {
 	DataBlockTimeout time.Duration
 	// DataFinalTimeout bounds the final DATA reply. Zero uses ten minutes.
 	DataFinalTimeout time.Duration
+	// Trace, when non-nil, receives every command sent and every reply
+	// received, in order, as the conversation happens. It exists so a caller
+	// can log or diagnose a session without this package choosing a logging
+	// library — see docs/API-STABILITY.md §4 on why this is a callback and
+	// not an exported interface.
+	//
+	// SASL payloads are redacted before the hook is called: the arguments
+	// after the mechanism name in AUTH, every bare SASL continuation
+	// response, and the server's 334 challenges. A caller cannot switch that
+	// off, because a trace hook that can leak a password is a trace hook that
+	// eventually does.
+	//
+	// Message content is never traced — DATA and BDAT payloads do not pass
+	// through here.
+	//
+	// The hook is called synchronously on the goroutine driving the
+	// connection, while that goroutine holds the operation lock. It must not
+	// block and must not call back into the Client, which would deadlock.
+	Trace func(TraceEvent)
 
 	_ struct{}
 }

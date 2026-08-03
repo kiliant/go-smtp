@@ -171,6 +171,32 @@ type ClientOptions struct {
 }
 ```
 
+### 4a. Observation hooks take one struct argument
+
+`ClientOptions.Trace func(TraceEvent)` is the first hook added under the rule
+above, and it fixes the shape for the rest. Approved by `api-guardian`
+2026-08-03.
+
+Two decisions are precedent, not local taste:
+
+- **One struct parameter, never a parameter list.** `func(TraceEvent)` can
+  grow a field; `func(TraceDirection, string)` cannot grow anything. The event
+  struct carries the §7 guard for exactly this reason, so a later `Code int`
+  or timestamp is additive.
+- **The direction is an open string type**, for the §1a reason. A caller must
+  not be able to write an exhaustive `switch` that a third direction — a
+  connection-lifecycle note, say — would silently break.
+
+A second hook is a second field. That is the whole extension story, and it is
+why no `Tracer` interface exists.
+
+**Redaction is behaviour, not shape.** The hook never sees SASL payloads and
+there is no opt-out. That is a deliberate security choice rather than an API
+constraint: should an un-redacted mode ever be justified, it arrives as an
+additive `ClientOptions` field under §3 and breaks nobody. Refusing it today
+forecloses nothing, which is why the safe default was chosen without a
+compatibility cost.
+
 ## 5. A single error type
 
 ```go
