@@ -29,6 +29,13 @@ const maxSCRAMIterations = 100_000
 type Config struct {
 	Username, Password, AuthorizationID, Token string
 	ChannelBinding                             []byte
+
+	// testNonce, when non-empty, replaces the crypto/rand-generated SCRAM
+	// client nonce. It exists solely so tests can pin the client nonce and
+	// check the resulting messages against known-answer test vectors (e.g.
+	// RFC 5802 §5, RFC 7677 §3); production callers must never set it, and
+	// it has no effect on any mechanism other than SCRAM.
+	testNonce string
 }
 
 // Mechanism is one client-side SASL conversation. Start returns the initial
@@ -152,11 +159,15 @@ func newSCRAM(name string, cfg Config, newHash func() hash.Hash) (*scram, error)
 }
 func (s *scram) Name() string { return s.name }
 func (s *scram) Start() ([]byte, error) {
-	nonce := make([]byte, 18)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("smtpsasl: SCRAM nonce: %w", err)
+	if s.cfg.testNonce != "" {
+		s.nonce = s.cfg.testNonce
+	} else {
+		nonce := make([]byte, 18)
+		if _, err := rand.Read(nonce); err != nil {
+			return nil, fmt.Errorf("smtpsasl: SCRAM nonce: %w", err)
+		}
+		s.nonce = base64.RawStdEncoding.EncodeToString(nonce)
 	}
-	s.nonce = base64.RawStdEncoding.EncodeToString(nonce)
 	s.firstBare = "n=" + saslName(s.cfg.Username) + ",r=" + s.nonce
 	gs2 := "n,,"
 	if s.plus {
