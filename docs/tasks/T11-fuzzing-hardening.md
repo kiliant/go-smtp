@@ -76,7 +76,8 @@ Do not make the change yourself — you do not own those files.
 
 ## Done when
 
-All fuzz targets have recorded 30-minute clean runs via `.state/run-fuzz.sh`
+All fuzz targets have recorded 10-minute clean runs via `.state/run-fuzz.sh`
+(human-approved campaign duration, 2026-08-03)
 (which **discovers** targets rather than reading a list — a hand-maintained list
 is how the sibling repo shipped three extension groups with no targets at all).
 The adversarial suite, module-wide `-race` run, memory-bound streaming

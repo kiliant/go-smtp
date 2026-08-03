@@ -21,7 +21,7 @@ stop paying attention.
 | `staticcheck` | every PR | must be clean |
 | `examples/**` build | every PR | must compile |
 | fuzz smoke, 60 s per discovered target | every PR | must pass |
-| fuzz long-run, 30 min per target | nightly | reported |
+| fuzz long-run, 10 min per target (human-approved 2026-08-03) | nightly | reported |
 | interop matrix | nightly | reported, not blocking |
 | `apidiff` against the previous tag | every PR | see below |
 
