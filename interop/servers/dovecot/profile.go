@@ -6,8 +6,12 @@
 // implicit-TLS LMTP listener on port 31024 and no userdb. The Containerfile
 // adds a plain listener on the conventional port 24 (binding it needs
 // CAP_NET_BIND_SERVICE, since the image runs as the non-root "vmail" user)
-// and a static userdb so any recipient resolves under /srv/vmail. Verified
-// running on 2026-08-02.
+// and a passwd-file userdb (see ./users) provisioning two accepted mailboxes
+// under /srv/vmail; any other recipient is rejected at RCPT with a real
+// "user doesn't exist" reply. smtpclient/lmtp_interop_test.go drives a
+// multi-recipient LMTP transaction against this container and asserts the
+// per-recipient DATA replies are genuinely distinct, not one reply copied N
+// times. Verified running on 2026-08-03.
 package dovecot
 
 import (

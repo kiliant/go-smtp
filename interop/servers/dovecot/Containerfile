@@ -1,8 +1,12 @@
 # Dovecot LMTP interop target: the RFC 2033 reference and the only way to
 # exercise per-recipient DATA replies against a real implementation. Adds a
-# plain (non-TLS) LMTP listener on port 24 and a static userdb so any
-# recipient resolves to a maildir under /srv/vmail, since the base image
-# ships only an implicit-TLS LMTP listener on 31024 and no userdb.
+# plain (non-TLS) LMTP listener on port 24 and a passwd-file userdb (see
+# ./users) provisioning two accepted mailboxes under /srv/vmail, since the
+# base image ships only an implicit-TLS LMTP listener on 31024 and no userdb.
+# An address not listed in ./users is rejected at RCPT with a real "user
+# doesn't exist" reply, which is what lets the interop suite exercise a
+# genuine mixed accept/reject multi-recipient transaction.
 FROM docker.io/dovecot/dovecot:2.4.3
 
 COPY interop.conf /etc/dovecot/conf.d/99-interop.conf
+COPY users /etc/dovecot/users
