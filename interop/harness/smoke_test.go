@@ -78,6 +78,12 @@ func startEHLOServer(t *testing.T, extensions []string) (string, func()) {
 					_, _ = fmt.Fprintf(conn, "250-%s\r\n", ext)
 				}
 				_, _ = fmt.Fprintf(conn, "250 %s\r\n", extensions[len(extensions)-1])
+			case strings.HasPrefix(line, "MAIL FROM:"):
+				_, _ = conn.Write([]byte("250 2.1.0 OK\r\n"))
+			case strings.HasPrefix(line, "RCPT TO:"):
+				_, _ = conn.Write([]byte("250 2.1.5 OK\r\n"))
+			case strings.HasPrefix(line, "RSET"):
+				_, _ = conn.Write([]byte("250 2.0.0 OK\r\n"))
 			case strings.HasPrefix(line, "QUIT"):
 				_, _ = conn.Write([]byte("221 closing\r\n"))
 				return
