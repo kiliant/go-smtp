@@ -11,6 +11,15 @@ import (
 	"github.com/kiliant/go-smtp/smtpclient"
 )
 
+// healthCheckIdentity is the EHLO/LHLO identity the harness uses for its own
+// readiness probes. Leaving ClientOptions.Identity empty falls back to
+// os.Hostname(), which is a dotted, plausible-looking FQDN on a developer's
+// machine but a bare single-label name (e.g. "fv-az123-456") on GitHub-hosted
+// CI runners — Stalwart rejects that as an invalid EHLO domain, hanging every
+// Stalwart health check until it times out. The probe must not depend on the
+// ambient hostname.
+const healthCheckIdentity = "interop-harness.example.test"
+
 // WaitForEHLO polls addr with smtpclient.Dial until it completes a full
 // greeting-and-EHLO negotiation or ctx is done. This is the harness's health
 // gate: containers report "running" long before the SMTP service inside is
@@ -78,6 +87,7 @@ func assertSMTPProfile(ctx context.Context, cfg Config, h *Handle, p Profile, po
 	healthCtx, cancel := context.WithTimeout(ctx, cfg.HealthTimeout)
 	defer cancel()
 	client, err := WaitForEHLO(healthCtx, addr, &smtpclient.ClientOptions{
+		Identity:           healthCheckIdentity,
 		ImplicitTLS:        port.ImplicitTLS,
 		InsecureSkipVerify: true,
 		GreetingTimeout:    cfg.CommandTimeout,
@@ -121,6 +131,7 @@ func assertLMTPGreeting(ctx context.Context, cfg Config, h *Handle, p Profile, p
 	healthCtx, cancel := context.WithTimeout(ctx, cfg.HealthTimeout)
 	defer cancel()
 	client, err := WaitForEHLO(healthCtx, addr, &smtpclient.ClientOptions{
+		Identity:        healthCheckIdentity,
 		LMTP:            true,
 		GreetingTimeout: cfg.CommandTimeout,
 		MailTimeout:     cfg.CommandTimeout,
