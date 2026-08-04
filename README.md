@@ -97,12 +97,32 @@ reply to DATA" cannot be fixed after a freeze.
   separate post-v1.0 package (`smtpdeliver`), which the v1.0 API already reserves
   room for — see `docs/ARCHITECTURE.md`. Durable queues, retry scheduling and
   bounce generation are out of scope permanently.
-- **A mail *server* framework** — deferred to milestone M5, after v1.0. The core
-  types are already split into a shared package so this can be added without an
-  API break.
 - **MIME composition, DKIM/ARC signing, charset transcoding.** The client
   transmits what it is given. Use dedicated libraries.
+- **Mailbox storage, queueing, spam filtering, DKIM verification.** The planned
+  server framework (below) defines a backend surface; it does not implement one
+  for production.
 - **IMAP, POP3, JMAP.**
+
+## Not yet, but scoped
+
+A server framework, milestone M6, after v1.0 of the client. The core types were
+split into a shared I/O-free package from the first commit precisely so this can
+be added without an API break, and that has held up — `smtp.DataResult` was
+shaped in M0 for LMTP's per-recipient replies, and it turns out to be exactly
+what an LMTP *server* must produce.
+
+Its design is scoped now rather than after the tag, for one reason: adding types
+to the shared package after v1.0 is additive and always allowed, but *reshaping*
+one is not — and a vocabulary that has only ever been exercised in the client
+direction can contain a type a server can consume but cannot naturally produce.
+No client-side review finds that. So the design runs before the freeze, the
+implementation after it, and a bidirectional review of the shared vocabulary is a
+v1.0 exit criterion.
+
+See `docs/SERVER-DESIGN.md` — **approved**, four revisions, with every RFC
+claim it rests on quoted and sourced. No server code exists yet; the
+implementation follows the v1.0 tag.
 
 ## Documentation
 
@@ -114,6 +134,7 @@ reply to DATA" cannot be fixed after a freeze.
 | `docs/RFC-COVERAGE.md` | Keyword → RFC → status, from the IANA registry |
 | `docs/INTEROP.md` | Server matrix and how to run it |
 | `docs/ROADMAP.md` | Milestones and exit criteria |
+| `docs/SERVER-DESIGN.md` | Server framework design — approved, implementation post-v1.0 |
 | `CLAUDE.md` | Working rules for AI agents contributing here |
 
 ## Testing

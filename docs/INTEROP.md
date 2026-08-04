@@ -165,3 +165,73 @@ file would make the test assert nothing while still passing.
 5. Confirm the arch: `podman manifest inspect <image> | grep architecture`.
    If amd64-only, mark it Tier 3. **Do not record an architecture you have not
    run that command against.**
+
+## Testing our own server — planned, milestone M6
+
+No `smtpserver` code exists yet; this section is the runbook the server work
+(T22) implements against, recorded now so `docs/SERVER-DESIGN.md` §7 is
+committed to something concrete rather than a good intention.
+
+The client's rule — a capability is `verified` only when exercised against at
+least two independent implementations — has an obvious problem in the other
+direction: our client testing our server is one implementation talking to
+itself. A shared misreading of an RFC passes both sides and neither notices. So
+loopback is the inner loop, and the validation is external.
+
+### 1. Loopback — fast, hermetic, not validation
+
+Our client against our server over `net.Pipe`, in-process, no containers. Runs in
+the default `go test ./...` because it needs no runtime. Catches regressions;
+proves nothing about RFC conformance.
+
+### 2. The matrix, pointed at ourselves
+
+`smtpserver` plus the in-memory backend becomes an entry in
+`interop/servers/gosmtp/`, exactly like Postfix and Stalwart: a `profile.go`
+declaring expected EHLO keywords and ports, registered in
+`interop/harness/registry.go`.
+
+Everything in this document then applies unchanged — same fixtures, same
+skip/assert distinction, same per-capability table. The result is our server's
+coverage reported in the same units as Postfix's, which is the comparison that
+means something.
+
+It differs from every other entry in one way worth noting: the profile assertion
+("a server not advertising a keyword its profile claims is a failure") becomes a
+real regression test rather than a container-health check, because we control
+both halves. That is a feature — it is the one entry where the assertion catches
+our own bug.
+
+Being in-process rather than containerised, it needs no image and no podman, so
+**the harness must stop assuming every profile has a container.** That is a real
+change to `interop/harness/`, not a configuration tweak, and T22 budgets for it.
+
+### 3. Real MTAs sending *to* us — the external check that matters
+
+This is the mirror of the client matrix and it is nearly free, because the
+containers already exist:
+
+| Sender | Configuration | Exercises |
+|---|---|---|
+| Postfix | `relayhost` pointing at our listener | ESMTP relay, pipelining, TLS, large messages |
+| Postfix | `lmtp:` transport | **LMTP server mode**, the natural counterpart to Dovecot's LMTP server already in the matrix |
+| Exim | `smtp` transport with a route to us | a second independent ESMTP implementation |
+| `swaks` | scripted | the de-facto SMTP testing tool; edge cases, malformed input, `BDAT` |
+| `msmtp`, Python `smtplib` | submission | the RFC 6409 profile with AUTH and STARTTLS |
+
+Honest note: **there is no `imaptest` equivalent for SMTP.** The sibling
+repository's single highest-value external conformance tool has no counterpart
+here, and pretending otherwise would set a false expectation. The compensation is
+that real MTAs are trivially available as senders, which is not true of IMAP
+clients.
+
+### 4. Server-side fuzzing and stateful security tests
+
+The mirror of T11, non-optional, and a larger exposure: the command parser, the
+path parser and the `BDAT` framer face **unauthenticated remote clients**.
+
+Parser fuzzing reaches none of the stateful cases, and each of these is a known
+vulnerability class. They are listed in full in `docs/SERVER-DESIGN.md` §7; the
+two that must never regress are **SMTP smuggling** (published vectors asserted to
+terminate nothing) and **STARTTLS plaintext injection** (CVE-2011-0411: bytes
+buffered after the `STARTTLS` command discarded, session state reset).

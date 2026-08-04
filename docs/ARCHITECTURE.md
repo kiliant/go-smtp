@@ -13,7 +13,20 @@ github.com/kiliant/go-smtp          package smtp
     ├── internal/saslprep    SASLprep (RFC 4013) credential preparation
     ├── internal/unicodenorm NFC/NFKC normalisation, generated tables
     └── smtpclient           package smtpclient — the client
+
+    planned, milestone M6 — see docs/SERVER-DESIGN.md (approved 2026-08-04):
+    └── smtpserver           package smtpserver — the server framework
+        ├── memory           in-memory reference backend (supported)
+        └── backendtest      conformance suite third-party backends run
 ```
+
+The server adds **no new internal package**. Its codec work — command decoding,
+reply encoding, path parsing, `Received:` generation, the SASL responder half —
+extends `internal/smtpwire` and `internal/smtpsasl` in place, because those
+packages are grammar-level and their existing types are direction-free. This is a
+deliberate difference from the sibling `go-imap`, whose semantic codec had to be
+lifted out of the client package into a new one; here the semantic assembly that
+would have needed lifting is small enough to live in the server.
 
 `internal/unicodenorm` sits below `internal/saslprep` and imports nothing outside
 the standard library, so the normalisation tables stay reusable by anything else
@@ -26,6 +39,45 @@ types — the delivery layer (M5, T14) and the server framework (M5, T15). A
 per-recipient result type that lived in `smtpclient` would have to be duplicated
 or imported backwards by both, and fixing that later is a breaking change. The
 split costs nothing now and buys the option twice.
+
+## Decision: the vocabulary is bidirectional; the codec is not, and mostly need not be
+
+**Status: settled with the approval of `docs/SERVER-DESIGN.md`, 2026-08-04.**
+
+The layering above delivered what it promised for *types*: `package smtp` is
+usable from a server essentially unchanged. `DataResult []RecipientResult` in
+particular was shaped in M0 for LMTP's per-recipient replies, and that is exactly
+what an LMTP *server* must produce — the decision pays off in a direction nobody
+was testing.
+
+It did not deliver it for *codecs*, and the distinction was invisible until the
+server was scoped. Three tiers:
+
+- **Direction-agnostic, reusable as-is.** `package smtp` itself; `LineReader`;
+  `EncodeXtext`/`DecodeXtext`, which are already both directions; the
+  `EnhancedCode` and `Param` value types; `internal/saslprep` and
+  `internal/unicodenorm`.
+
+  Including one better-than-expected case: `internal/smtpwire/dotstuff.go`
+  contains **both** `DotStuffWriter` and `DotUnstuffReader`, and the latter has no
+  caller anywhere in the module. The transparency layer — the highest-risk code
+  in an SMTP server — is already complete in both directions, already fuzzed, and
+  its `ErrBareLFTerminator` doc comment already takes the correct written
+  position on SMTP smuggling.
+
+- **One-directional, needs a mirror.** Reply decoding exists, command decoding
+  does not. Command encoding exists, reply encoding does not. EHLO
+  *advertisement* parsing exists, EHLO *command* parsing and advertisement
+  encoding do not. `BDAT` writing exists, `BDAT` parsing does not. SASL is
+  initiator-only. Roughly 700–900 lines, all inside existing `internal/`
+  packages.
+
+- **Absent entirely.** **Path parsing** — `address.go` is constants only, because
+  a client transmits the string it is handed — and **`Received:` header
+  generation** (RFC 5321 §4.4, with the RFC 3848 `with` keywords). A client
+  needed neither.
+
+Full analysis in `docs/SERVER-DESIGN.md` §0 and §5; work in T17.
 
 ## Decision: the client speaks to a caller-supplied endpoint
 
@@ -260,6 +312,7 @@ and accepting an unbounded line is a denial-of-service.
 | M1 | connection, EHLO/TLS, auth, mail transaction, interop harness | Postfix interop green |
 | M2 | LMTP, extension groups A+B | M2 acceptance matrix green |
 | M3 | extension group C — full IANA coverage | no `planned` rows outside the deferred set |
-| M4 | fuzzing, API review, docs, release engineering | apidiff gate active |
+| M4 | fuzzing, API review, docs, release engineering, bidirectional vocabulary audit (T16) | apidiff gate active; `package smtp` reviewed from the server direction |
+| M5 | server *design* (T15) — runs before the tag | `docs/SERVER-DESIGN.md` approved |
 | **v1.0** | **API freeze** | |
-| M5 | delivery layer (T14), server framework (T15) | separate design docs first |
+| M6 | delivery layer (T14), server framework implementation (T17–T23) | reference server joins the interop matrix; real MTAs relay through it |

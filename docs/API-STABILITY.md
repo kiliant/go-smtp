@@ -190,6 +190,46 @@ Two decisions are precedent, not local taste:
 A second hook is a second field. That is the whole extension story, and it is
 why no `Tracer` interface exists.
 
+### 4b. The hard case: a server backend — APPROVED 2026-08-04
+
+The server framework's backend is the worst instance of this rule in the
+library, and it is the place the rule most often gets broken elsewhere.
+`docs/SERVER-DESIGN.md` §2 proposes an answer that **applies** this rule rather
+than amending it, which is worth recording because the sibling `go-imap` reached
+the opposite conclusion for its own backend.
+
+- **The proposal is a struct of function fields, in two levels** — `Backend` →
+  `Session`, one required field on the first and five on the second, everything
+  else nil-means-unadvertised. No exported interface, so
+  `TestAPISurfaceNoExportedInterfaces` needs no exemption. The *direction* is
+  approved; the contract is at revision 2 and awaiting approval.
+- **The reason the sibling's amendment does not transfer** is a property of the
+  protocol, not a matter of taste. IMAP's extension pressure lands on the backend
+  as *method groups*: nine already-published RFCs each want one, and flattening
+  them reaches ~60 nilable fields. SMTP's lands on `MAIL`/`RCPT` parameters, and
+  those already have a home in `smtp.MailOptions`/`smtp.RcptOptions`, whose
+  growth is governed by §3 and is non-breaking by construction. Counted against
+  `RFC-COVERAGE.md`: fifteen implemented extensions need **zero** new backend
+  operations; five need one function each.
+- **The nil-field cost is closed by a construction-time gate**, not by a promise:
+  `NewServer` refuses to start, naming every missing required field. With six
+  fields the failure mode is "the process will not start", which is acceptable.
+  With sixty it would not be.
+- **A required field stays required even when a no-op would do.** `Session.Reset`
+  is the case that proves it: revision 1 made it optional on the grounds that the
+  framework could "just drop transaction state", which is only true when the
+  framework owns that state. A nil field that silently does the wrong thing for
+  backends holding their own state is worse than one line of no-op.
+- **The rule it establishes:** *a new extension may add a field to `Backend`, to
+  `Session`, or to any options struct; it may never change the signature of an
+  existing field, and it may never introduce an exported interface.* Enforced by
+  extending `api_surface_test.go` to scan `smtpserver/` — a data change to an
+  existing gate, not a new mechanism. §3 of this document is the standing record
+  of what happens to a rule with no gate.
+
+`SERVER-DESIGN.md` is approved (revision 4, 2026-08-04), so this is settled
+design. `smtpserver` code still waits for the v1.0 tag.
+
 **Redaction is behaviour, not shape.** The hook never sees SASL payloads and
 there is no opt-out. That is a deliberate security choice rather than an API
 constraint: should an un-redacted mode ever be justified, it arrives as an
@@ -285,6 +325,47 @@ the missing one can be added.
   deliberately one release older than a strict "two most recent majors" policy
   would give. Raising it is a breaking change for callers pinned to an older
   toolchain and needs the same scrutiny as any other entry in this document.
+
+### Exception: `smtpserver` outside the v1 promise — APPROVED 2026-08-04
+
+**Status: approved. Nothing enforces it yet, because no `smtpserver` code exists;
+it becomes real with the first `smtpserver/go.mod`.**
+
+The policy above says v1.0 freezes the exported API, without qualifying by
+package. Taken literally, `smtpserver` inherits the freeze the moment it lands —
+which would freeze the backend abstraction, the hardest API in this library, on
+its first commit, before a single third-party backend has been written against
+it. That is the failure this project exists to avoid, relocated one layer up.
+
+**The decision is a nested module:** `smtpserver` gets its own `go.mod` and is
+versioned v0.x independently while the root module is v1.x.
+
+The alternative — same module, with a carve-out enforced by scoping the `apidiff`
+gate — is worse for a reason that has nothing to do with our tooling. An
+`apidiff` scope is a gate on *us*; it changes nothing a user sees. Someone
+importing a package from a module tagged v1 reasonably expects it not to break,
+Go's compatibility guidance is built on that expectation, and no CI configuration
+resets it. A doc comment claiming the package is exempt is a promise, which is the
+mechanism this document distrusts everywhere else.
+
+Two objections to the nested module do not survive contact:
+
+- *Development ergonomics.* Go workspaces (`go.work`) exist to develop
+  interdependent modules in one repository without committing `replace`
+  directives.
+- *The `go.sum` entry.* The zero-dependency rule exists because a `go.sum` entry
+  is a stability liability **we do not control**. A self-referential entry on our
+  own module is one we control entirely, so this is a narrow, well-founded
+  exception rather than a hole in the policy.
+
+Real remaining costs, accepted: two tags per release, explicit version
+coordination, and a deliberate bump of the root-module dependency.
+
+Fallback if the nested module proves unworkable in practice: same-module with a
+documented stability exception — needing its own separate approval.
+
+The sibling `go-imap` reached the same decision for `imapserver`. Two libraries
+by one author diverging here would be a usability tax on anyone using both.
 
 ## Reviewing against this document
 

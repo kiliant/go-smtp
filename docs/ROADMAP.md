@@ -56,21 +56,50 @@ join the matrix.
 **Exit:** `docs/RFC-COVERAGE.md` has no `planned` rows outside the explicitly
 `deferred` set.
 
-## M4 — Hardening and the freeze (T11, T12, T13)
+## M4 — Hardening and the freeze (T11, T12, T13, T16)
 
 Fuzzing corpus, API surface review, documentation and examples, release
-engineering.
+engineering — and the bidirectional vocabulary audit.
 
 **Exit:** `apidiff` gate active in CI; API surface test passes; every exported
 symbol has a doc comment; examples compile and run against the matrix; a full
-30-minute fuzz campaign over every discovered target is clean.
+30-minute fuzz campaign over every discovered target is clean; **`package smtp`
+has been reviewed from the server direction (T16) and every finding has a
+recorded verdict, executed or explicitly declined.**
+
+That last criterion is new, and it is not a formality. Adding a type to
+`package smtp` after the tag is additive and always allowed; **reshaping one is
+not**, and a vocabulary exercised only in the client direction can hold a type a
+server can consume but cannot naturally produce. `docs/SERVER-DESIGN.md` §0 ran
+that review and found three concrete defects — the RFC 9422 `LIMITS` types are in
+`smtpclient` where a server cannot reach them, `AllowUnadvertisedParameters` is
+meaningless in the receive direction, and the trace vocabulary is in a
+direction-specific package. Each is free to fix now and a v2 otherwise.
+
+## M5 — Design before the freeze (T15)
+
+**T15 — server framework design.** `docs/SERVER-DESIGN.md`. Design only; no
+`smtpserver` code. It runs *before* the tag rather than after, because the design
+is what tells us the freeze is safe — see the M4 exit criterion above.
+
+**Exit:** the document is approved by the human, in writing; the versioning
+question in its §9 is decided; and T18–T23 have specs written against the
+approved abstraction.
+
+Two open questions carried by that document, both needing a human decision:
+
+- whether `smtpserver` ships as a **nested v0.x module** rather than inheriting
+  the root module's v1 freeze on its first commit (§9);
+- whether one options struct serves both directions for `MAIL`/`RCPT`
+  parameters, or the receive side gets its own types (§0) — this one has a
+  deadline, because it is T16's and T16 is M4.
 
 ## v1.0 — API freeze
 
 After this tag, additive changes only. Removals require two minor releases of
 deprecation and do not land before v2.
 
-## M5 — After the freeze (T14, T15)
+## M6 — After the freeze (T14, T17–T23)
 
 Two separate packages, each design-document first:
 
@@ -79,12 +108,17 @@ Two separate packages, each design-document first:
   retryable outcomes. Deliberately after v1.0: the three reservations in
   `API-STABILITY.md` §9 already make it additive, so there is no cost to waiting
   and a real cost to designing it against no caller.
-- **T15 — server framework.** The shared `package smtp` vocabulary already makes
-  this additive for the same reason.
+- **T17–T23 — `smtpserver`.** The server framework implementation. T17 (the
+  server-direction codec, plus the two subsystems that exist in neither
+  direction: path parsing and `Received:` generation) is the bulk of the work and
+  does not depend on the backend abstraction.
+
+**Exit:** the reference server joins the interop matrix as its own entry, real
+MTAs relay through it, and the server-side fuzz campaign is clean.
 
 Neither may pull scope forward into the client. Durable queues, retry
-scheduling, bounce generation and full MTA behaviour are out of scope at every
-milestone.
+scheduling, bounce generation, mailbox storage, spam filtering and full MTA
+behaviour are out of scope at every milestone.
 
 ## Sequencing
 
@@ -104,3 +138,13 @@ validate has no value.
 
 T08 and T09 are the genuinely parallel phase: two extension agents, one owning
 file prefix each, no shared files.
+
+The server work hangs off the same graph:
+
+```
+T15 (design, human-led) ──┬── T16 (audit) ── joins the v1.0 critical path
+                          └── T17 (codec) ── T18 … T23, all post-tag
+```
+
+T15 is design-only and runs in parallel with M2–M4. T16 is the only server-scoped
+task inside the freeze.

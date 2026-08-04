@@ -122,6 +122,22 @@ Dependencies point downward only. `package smtp` must not import `smtpclient`,
 and must not perform I/O — it is the shared vocabulary, which is what lets the
 future server framework and the delivery layer reuse it without an API break.
 
+The server framework is **designed and approved**: `docs/SERVER-DESIGN.md`
+(revision 4, approved 2026-08-04) adds `smtpserver` to the tree above and extends
+`internal/smtpwire` and `internal/smtpsasl` in place. **`smtpserver` code still
+waits for the v1.0 tag** — that is a milestone condition, separate from design
+approval. One consequence lands before the tag:
+[T16](docs/tasks/T16-bidirectional-vocabulary-audit.md), a bidirectional audit of
+`package smtp`, is a v1.0 exit criterion, because reshaping a type after the
+freeze is not additive.
+
+Two decisions in that document diverge from the sibling `go-imap` and are argued
+rather than assumed: the backend is a **struct of function fields**, which
+applies rule 4 rather than amending it (SMTP's extension pressure lands on
+`MAIL`/`RCPT` parameter structs, not on backend methods); and the session model
+is **one goroutine per connection**, with none of the event-loop and update-queue
+machinery an IMAP server needs, because SMTP has no unsolicited server data.
+
 ## Zero external dependencies
 
 The standard library only. A `go.sum` entry is a stability liability we do not
