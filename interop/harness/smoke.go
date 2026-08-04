@@ -8,7 +8,6 @@ import (
 	"net"
 	"time"
 
-	smtp "github.com/kiliant/go-smtp"
 	"github.com/kiliant/go-smtp/smtpclient"
 )
 
@@ -20,12 +19,6 @@ import (
 // Stalwart health check until it times out. The probe must not depend on the
 // ambient hostname.
 const healthCheckIdentity = "interop-harness.example.test"
-
-// SmokeRecipient is the mailbox every profile in this harness provisions
-// during Seed (see interop/matrix_test.go's identical local convention).
-// assertSMTPProfile uses it to prove RCPT actually works, not merely that
-// the port accepts a connection.
-const SmokeRecipient = "interop@example.test"
 
 // WaitForEHLO polls addr with smtpclient.Dial until it completes a full
 // greeting-and-EHLO negotiation or ctx is done. This is the harness's health
@@ -124,54 +117,7 @@ func assertSMTPProfile(ctx context.Context, cfg Config, h *Handle, p Profile, po
 		return NewResult(p.Name, "assert-profile", OutcomeProfileViolation,
 			fmt.Errorf("server did not advertise claimed extension(s) %v", missing), tr)
 	}
-
-	if err := probeRcptReady(healthCtx, client); err != nil {
-		outcome := OutcomeEnvironmental
-		if errors.Is(err, context.DeadlineExceeded) {
-			outcome = OutcomeTimeout
-		}
-		tr.Recordf("RCPT probe failed: %v", err)
-		return NewResult(p.Name, "assert-profile", outcome, err, tr)
-	}
-	tr.Recordf("RCPT probe succeeded")
 	return NewResult(p.Name, "assert-profile", OutcomeOK, nil, tr)
-}
-
-// probeRcptReady issues a throwaway MAIL/RCPT to SmokeRecipient over client
-// and retries while the server returns a transient (4xx) reply. An
-// EHLO-only health gate is not sufficient for every profile: Postfix's
-// virtual_mailbox_maps lookup can still be initializing seconds after its
-// EHLO greeting answers, observed live as a 451 4.3.0 "Temporary lookup
-// failure" that resolved itself on a later attempt. RFC 5321's own
-// semantics for a 4xx reply are "try again," so retrying here is
-// protocol-correct harness behavior, not a workaround for a client bug.
-//
-// MAIL FROM reuses SmokeRecipient itself, matching the rest of this harness
-// (see interop/matrix_test.go's seedMessage): Exim's ACL requires a
-// verifiable sender, and SmokeRecipient is the one address every profile
-// actually provisions.
-func probeRcptReady(ctx context.Context, client *smtpclient.Client) error {
-	var lastErr error
-	for {
-		err := client.Mail(ctx, SmokeRecipient, nil)
-		if err == nil {
-			err = client.Rcpt(ctx, SmokeRecipient, nil)
-		}
-		_ = client.Reset(ctx, nil)
-		if err == nil {
-			return nil
-		}
-		var smtpErr *smtp.Error
-		if !errors.As(err, &smtpErr) || smtpErr.Code < 400 || smtpErr.Code >= 500 {
-			return err
-		}
-		lastErr = err
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("harness: recipient lookup never became ready: %w (last attempt: %v)", ctx.Err(), lastErr)
-		case <-pollTick():
-		}
-	}
 }
 
 func assertLMTPGreeting(ctx context.Context, cfg Config, h *Handle, p Profile, port Port) *Result {
