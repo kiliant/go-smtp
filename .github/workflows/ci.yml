@@ -1,15 +1,16 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   # Cancel superseded pull-request runs, never superseded main runs. Cancelling
   # unconditionally means a push to main can kill the post-merge validation of
   # the commit before it, so a merge lands with no CI verdict at all and nobody
@@ -17,6 +18,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # The module has no dependencies, so there is nothing to download and nothing
+  # a proxy could substitute. Failing closed is cheaper than discovering later
+  # that a dependency arrived unnoticed.
+  GOFLAGS: -mod=readonly
+
   # Pinned so an upstream tool release cannot turn main red with no commit here,
   # and so the compatibility verdict is reproducible. Kept identical to the
   # sibling go-imap repository's ci.yml.
@@ -130,30 +136,44 @@ jobs:
       - run: .github/scripts/check-no-dependencies.sh
 
   fuzz-smoke:
-    name: fuzz-smoke
-    # Pull requests only. This is the slowest job in the workflow by an order of
-    # magnitude, and on a push to main it re-fuzzes exactly the code the pull
-    # request already fuzzed. The nightly campaign is where sustained fuzzing
-    # belongs.
+    # 60 s per target on every pull request. Sharded so the campaign is bounded
+    # by one target's runtime rather than by the target count, and so it grows
+    # by adding a shard instead of by getting slower. FUZZ_PARALLEL=1: the
+    # deadline artifact documented in .github/scripts/fuzz.sh is caused by
+    # oversubscription, and hosted runners have few cores.
+    #
+    # No custom `name:` — a matrix expression in a job name is not expanded when
+    # the job is skipped, so it would render literally on every push.
     if: github.event_name != 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_TOTAL: 4
+      FUZZ_PARALLEL: 1
+      FUZZ_OUT: ${{ github.workspace }}/fuzz-out
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-      - run: .github/scripts/run-fuzz.sh 60s 2
-      - name: Upload any crashers
-        # A crasher is a corpus file the engine wrote into the working tree. It
-        # has to reach the repository rather than evaporate with the runner:
-        # it is the reproducer, and regenerating it costs another campaign.
+      - run: .github/scripts/fuzz.sh 60s
+      - name: upload logs
+        # The logs carry the per-target results; a crasher is a corpus file the
+        # engine wrote into the working tree and has to reach the repository
+        # rather than evaporate with the runner.
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: fuzz-smoke-crashers
-          path: '**/testdata/fuzz/**'
+          name: fuzz-smoke-shard-${{ matrix.shard }}
+          path: |
+            fuzz-out/
+            **/testdata/fuzz/**
           if-no-files-found: ignore
           retention-days: 7
 

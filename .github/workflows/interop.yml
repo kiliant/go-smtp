@@ -1,37 +1,37 @@
 name: Interop
 
-# Real servers under podman. Correctness against the RFC is necessary but not
-# sufficient: servers disagree, and the disagreements are where client bugs
-# live.
+# Real servers under a container runtime. Correctness against the RFC is
+# necessary but not sufficient: servers disagree, and the disagreements are
+# where client bugs live.
 #
-# Nightly, not on push. The sibling go-imap repository runs its interop matrix
-# on every push to main because that matrix costs a couple of minutes; this one
-# starts a far heavier set of servers, so the same trigger would make a push to
-# main slower than the review that preceded it. The harness skips on absent
+# On every push to main and nightly, so a regression against a real server
+# surfaces on the merge that caused it. The harness skips on absent
 # capabilities rather than failing, so a run here is informative rather than
-# blocking either way.
+# blocking.
 #
-# Split out of the former combined `Nightly` workflow so it can be dispatched
-# without also starting a multi-hour fuzz campaign, and so its cost is visible
-# on its own line rather than hidden inside a combined duration.
+# Structurally identical to the sibling go-imap repository's interop.yml —
+# same triggers, same two jobs, same names. Only the test package list and the
+# server-subset variable differ.
 
 on:
+  push:
+    branches: [main]
   schedule:
-    # Staggered off the fuzz campaign's 02:17 purely so the two are easy to tell
-    # apart in the run list; they are independent workflows on separate runners.
-    - cron: '47 2 * * *'
+    # Nightly, 03:17 UTC. Off the hour so this run does not queue behind every
+    # other project's midnight cron. Same slot as the sibling repository's.
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
-      include_emulated:
-        description: Include Tier 3 amd64-emulated interop profiles
-        type: boolean
-        default: false
+      servers:
+        description: 'Comma-separated subset (GO_SMTP_INTEROP_SERVERS); empty means all'
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: interop
+  group: interop-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -40,7 +40,40 @@ env:
 
 jobs:
   interop:
-    name: Podman interoperability matrix
+    name: interop (native profiles)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GO_SMTP_INTEROP_SERVERS: ${{ github.event.inputs.servers }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: container engine
+        run: .github/scripts/container-engine.sh
+
+      # The suites below must stay separate and sequential. Go runs one test
+      # process per package, and every process with a TestMain using the harness
+      # owns an independent container lifecycle; combining the package lists
+      # starts those lifecycles concurrently, which means several copies of every
+      # server image competing for the same runner.
+      - name: native matrix, sequentially
+        run: .github/scripts/run-interop.sh interop
+
+      - name: container diagnostics
+        if: failure()
+        run: podman ps -a || true
+
+  interop-emulated:
+    # Tier 3, amd64-only images. Hosted runners are amd64, so on GitHub this is
+    # native and the tag is only what enables the profiles — on the arm64 dev
+    # host it genuinely emulates. Not on push either way, because these are the
+    # slowest images in the matrix.
+    name: interop (emulated profiles)
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -49,13 +82,19 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-      - name: Container engine
+
+      - name: container engine
         run: .github/scripts/container-engine.sh
-      # On a schedule run `inputs` is null, so the emulated step is skipped and
-      # the native matrix runs — the same behaviour the combined workflow had.
-      - name: Run native matrix sequentially
-        if: ${{ !inputs.include_emulated }}
-        run: .github/scripts/run-interop.sh interop
-      - name: Run native and Tier 3 matrix sequentially
-        if: ${{ inputs.include_emulated }}
+
+      - name: enable cross-architecture execution
+        # A no-op on an amd64 runner; present so this job behaves the same way
+        # if it is ever moved to an arm64 runner.
+        run: |
+          if [ "$(uname -m)" != "x86_64" ]; then
+            podman run --rm --privileged docker.io/tonistiigi/binfmt:latest --install amd64
+          else
+            echo "runner is amd64; the tier 3 images run natively here"
+          fi
+
+      - name: native and Tier 3 matrix, sequentially
         run: .github/scripts/run-interop.sh 'interop interop_emulated'
