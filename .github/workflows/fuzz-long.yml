@@ -1,20 +1,28 @@
-name: Nightly
+name: Fuzz (long)
+
+# 10 minutes per discovered target, nightly. The per-pull-request 60 s smoke run
+# lives in ci.yml.
+#
+# Split out of the former combined `Nightly` workflow so it can be dispatched on
+# its own: bundled with the interop matrix, asking for a fuzz campaign also
+# started a multi-hour server matrix, and a run that expensive to trigger is a
+# run nobody triggers. Mirrors the sibling go-imap repository's layout.
 
 on:
   schedule:
     - cron: '17 2 * * *'
   workflow_dispatch:
     inputs:
-      include_emulated:
-        description: Include Tier 3 amd64-emulated interop profiles
-        type: boolean
-        default: false
+      fuzztime:
+        description: Duration per target
+        required: false
+        default: '10m'
 
 permissions:
   contents: read
 
 concurrency:
-  group: nightly
+  group: fuzz-long
   cancel-in-progress: false
 
 env:
@@ -23,7 +31,7 @@ env:
 
 jobs:
   fuzz-long:
-    name: Fuzz long-run (10m per discovered target)
+    name: Fuzz long-run (${{ github.event.inputs.fuzztime || '10m' }} per discovered target)
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -32,7 +40,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-      - run: .github/scripts/run-fuzz.sh 10m 2
+      - name: Campaign
+        env:
+          FUZZTIME: ${{ github.event.inputs.fuzztime || '10m' }}
+        run: .github/scripts/run-fuzz.sh "$FUZZTIME" 2
       - name: Upload any crashers
         # A crasher is a corpus file the engine wrote into the working tree.
         # It must reach the repository rather than evaporate with the runner —
@@ -66,22 +77,3 @@ jobs:
             echo "no crasher files written; see the campaign table for the failure" \
               >>"$GITHUB_STEP_SUMMARY"
           fi
-
-  interop:
-    name: Podman interoperability matrix
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - name: Container engine
-        run: .github/scripts/container-engine.sh
-      - name: Run native matrix sequentially
-        if: ${{ !inputs.include_emulated }}
-        run: .github/scripts/run-interop.sh interop
-      - name: Run native and Tier 3 matrix sequentially
-        if: ${{ inputs.include_emulated }}
-        run: .github/scripts/run-interop.sh 'interop interop_emulated'

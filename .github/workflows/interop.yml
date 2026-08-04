@@ -1,0 +1,61 @@
+name: Interop
+
+# Real servers under podman. Correctness against the RFC is necessary but not
+# sufficient: servers disagree, and the disagreements are where client bugs
+# live.
+#
+# Nightly, not on push. The sibling go-imap repository runs its interop matrix
+# on every push to main because that matrix costs a couple of minutes; this one
+# starts a far heavier set of servers, so the same trigger would make a push to
+# main slower than the review that preceded it. The harness skips on absent
+# capabilities rather than failing, so a run here is informative rather than
+# blocking either way.
+#
+# Split out of the former combined `Nightly` workflow so it can be dispatched
+# without also starting a multi-hour fuzz campaign, and so its cost is visible
+# on its own line rather than hidden inside a combined duration.
+
+on:
+  schedule:
+    # Staggered off the fuzz campaign's 02:17 purely so the two are easy to tell
+    # apart in the run list; they are independent workflows on separate runners.
+    - cron: '47 2 * * *'
+  workflow_dispatch:
+    inputs:
+      include_emulated:
+        description: Include Tier 3 amd64-emulated interop profiles
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: interop
+  cancel-in-progress: false
+
+env:
+  # Keep in step with ci.yml's GO_VERSION.
+  GO_VERSION: '1.26.x'
+
+jobs:
+  interop:
+    name: Podman interoperability matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Container engine
+        run: .github/scripts/container-engine.sh
+      # On a schedule run `inputs` is null, so the emulated step is skipped and
+      # the native matrix runs — the same behaviour the combined workflow had.
+      - name: Run native matrix sequentially
+        if: ${{ !inputs.include_emulated }}
+        run: .github/scripts/run-interop.sh interop
+      - name: Run native and Tier 3 matrix sequentially
+        if: ${{ inputs.include_emulated }}
+        run: .github/scripts/run-interop.sh 'interop interop_emulated'
