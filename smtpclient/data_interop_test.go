@@ -57,9 +57,6 @@ func runDataTransparencyProfile(t *testing.T, cfg harness.Config, profile harnes
 			if logs, logErr := h.Logs(stopCtx); logErr == nil {
 				t.Logf("%s container logs:\n%s", profile.Name, logs)
 			}
-			if profile.Name == "postfix" {
-				dumpPostfixDiagnostics(stopCtx, t, h, profile.Name)
-			}
 		}
 		if err := h.Stop(stopCtx); err != nil {
 			t.Errorf("stopping %s: %v", profile.Name, err)
@@ -137,32 +134,6 @@ func runDataTransparencyProfile(t *testing.T, cfg harness.Config, profile harnes
 				t.Fatalf("DATA/BDAT retrieved bodies differ\nDATA: %q\nBDAT: %q", dataBody, chunkedBody)
 			}
 		})
-	}
-}
-
-// dumpPostfixDiagnostics is a temporary aid for run 30890660307 / 30893303379:
-// Postfix on the amd64 nightly runner rejects RCPT with "open database
-// /etc/postfix/vmailbox.lmdb: No such file or directory" for 30+ seconds
-// straight, which neither a local arm64 build nor a local amd64-under-qemu
-// build reproduces. This dumps the container's own view of the map file and
-// the runtime (not build-time) master.cf/main.cf state so the next failure
-// carries the evidence needed to fix the Containerfile, instead of another
-// remote-log guess. Remove once the root cause is confirmed and fixed.
-func dumpPostfixDiagnostics(ctx context.Context, t *testing.T, h *harness.Handle, profileName string) {
-	t.Helper()
-	commands := [][]string{
-		{"sh", "-c", "ls -la /etc/postfix/"},
-		{"sh", "-c", "find /var/spool/postfix -iname 'vmailbox*' 2>&1"},
-		{"sh", "-c", "postconf -M | grep '^smtp.*inet'"},
-		{"sh", "-c", "postconf -h mail_owner"},
-	}
-	for _, cmd := range commands {
-		out, err := h.Exec(ctx, cmd...)
-		if err != nil {
-			t.Logf("%s diagnostic %q failed: %v\n%s", profileName, cmd, err, out)
-			continue
-		}
-		t.Logf("%s diagnostic %q:\n%s", profileName, cmd, out)
 	}
 }
 
