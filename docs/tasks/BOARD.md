@@ -77,7 +77,24 @@ owner:
 | [T12](T12-api-review-docs.md) | API review & docs | M4 | T04, T07, T09, T10 | doc comments, `examples/**`, `api_surface_test.go` | docs-release + api-guardian |
 | [T13](T13-release-engineering.md) | Release engineering | M4 | T11, T12 | `.github/**`, `CHANGELOG.md` | docs-release |
 | [T14](T14-delivery-design.md) | Delivery layer design | M5 | v1.0 tagged | `docs/DELIVERY-DESIGN.md` | — |
-| [T15](T15-server-design.md) | Server framework design | M5 | v1.0 tagged | `docs/SERVER-DESIGN.md` | — |
+| [T15](T15-server-design.md) | Server framework design | M5 | — | `docs/SERVER-DESIGN.md` | — (human-led) |
+| [T16](T16-bidirectional-vocabulary-audit.md) | Bidirectional vocabulary audit — **blocks v1.0** | M4 | T15 | `*.go` (root pkg), `smtpclient/{ext_b_limits,trace}.go` | client-core + api-guardian |
+| [T17](T17-server-direction-codec.md) | Server-direction codec | M6 | T15 approved | `internal/smtpwire/**`, `internal/smtpsasl/**` | wire-protocol |
+| T18 | Server core: loop, state machine, capabilities, TLS | M6 | T17, §2 approved | `smtpserver/**` | server-core |
+| T19 | Backend contract, `memory`, `backendtest` | M6 | T18 | `smtpserver/{memory,backendtest}/**` | server-core |
+| T20 | Base command set and the extension floor | M6 | T19 | `smtpserver/**` | server-core |
+| T21 | Server extensions beyond the floor, incl. `ATRN` | M6 | T20 | `smtpserver/ext_*.go` | server-core |
+| T22 | Server conformance, interop, fuzzing, security tests | M6 | T20 | `interop/servers/gosmtp/**`, `smtpserver/**/*_fuzz_test.go` | fuzz-hardening + interop-harness |
+| T23 | Server API review, docs, `smtpserver` release | M6 | T21, T22 | `smtpserver` docs, examples, release | docs-release + api-guardian |
+
+**`docs/SERVER-DESIGN.md` is approved** (revision 4, 2026-08-04), so T18–T23
+specs may now be written against it. T15–T17 already have specs. **Implementation
+of `smtpserver/**` still waits for the v1.0 tag** — a milestone condition,
+separate from design approval, unchanged by it.
+
+**T16 is the only server-scoped task with a deadline.** It is an M4 exit
+criterion because it removes client-only asymmetries from `package smtp`, and
+removing an exported field after v1.0 is not additive.
 
 ## Critical path
 
@@ -85,12 +102,22 @@ owner:
 T01 ──┬── T03 ──┬── T04 ──────────────┐
       │         ├── T05 ──┬── T07 ────┤
 T02 ──┘         │         ├── T08 ──┬─┴── T10 ──┐
-                │         └── T09 ──┘           ├── T12 ── T13 ── v1.0
-                └── T06 ────────────── T11 ─────┘
+                │         └── T09 ──┘           ├── T12 ── T13 ──┬── v1.0
+                └── T06 ────────────── T11 ─────┘                │
+                                                                 │
+T15 (design) ──┬── T16 (audit) ──────────────────────────────────┘
+               │
+               └── T17 ── T18 ── T19 ── T20 ──┬── T21 ──┬── T23
+                                              └── T22 ──┘
 ```
 
 T01 and T02 may run in parallel. Both must complete before dependent work
 begins — they fix the type signatures every later task consumes.
+
+T15 is design-only and runs in parallel with everything, human-led. **T16 joins
+the critical path to v1.0**: it removes client-only asymmetries from
+`package smtp`, and removing an exported field after the freeze is not additive.
+T17 onward are post-tag and gated on approval.
 
 T06 should start as soon as T03 lands, in parallel with T04 and T05. A matrix
 that arrives after the code it was meant to validate has no value.
@@ -129,6 +156,8 @@ symbol it added, and its rows in `../RFC-COVERAGE.md` are updated.
 | An RFC number in `../RFC-COVERAGE.md` looks wrong | Check the IANA registry, fix the doc. Never work from a recalled number — three numbers were already wrong in the source material this repo was built from. |
 | Two servers disagree and both look RFC-compliant | Record both; the client accommodates both. Note it for the doc comment. |
 | You want to add MX lookup, MTA-STS, DANE or a TLS-policy interface | Stop. That is T14, post-v1.0, and the scope is settled. See `../ARCHITECTURE.md`. |
+| You want to write `smtpserver` code | Check `git tag`. The design is approved; the implementation still waits for v1.0. Specs and T16/T17 are unblocked. |
+| A server-side need seems to require reshaping a type in `package smtp` | That is exactly T16's job, and T16 is M4. Record it there. After the tag it is a v2. |
 
 ## Plan vs state
 
