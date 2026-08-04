@@ -24,8 +24,10 @@ Run this checklist on the exact candidate commit:
    **Breaking exported API change (pre-v1)**.
 3. `docs/RFC-COVERAGE.md` has no stray `planned` or `in progress` row intended
    for this release. Deferred rows remain explicit and justified.
-4. CI passes on Go 1.25 and 1.26, including race, gofmt, vet, Staticcheck
-   2026.1 (`v0.7.0`), compiled examples, and the API-surface gates.
+4. CI passes on Go 1.24 (the `go.mod` floor) and 1.26 (the current release),
+   including race, gofmt, vet under every interop tag set, the zero-dependency
+   gate, Staticcheck 2026.1 (`v0.7.0`), compiled examples, and the API-surface
+   gates.
 5. Run the discovered fuzz campaign for 10 minutes per target:
    `.github/scripts/run-fuzz.sh 10m 2`. Review every failure and ensure the
    discovered-target count matches the result count.

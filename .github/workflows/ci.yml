@@ -10,20 +10,36 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded pull-request runs, never superseded main runs. Cancelling
+  # unconditionally means a push to main can kill the post-merge validation of
+  # the commit before it, so a merge lands with no CI verdict at all and nobody
+  # notices until the next failure gets blamed on the wrong change.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Pinned so an upstream tool release cannot turn main red with no commit here,
+  # and so the compatibility verdict is reproducible. Kept identical to the
+  # sibling go-imap repository's ci.yml.
   APIDIFF_VERSION: v0.0.0-20260709172345-9ea1abe57597
   STATICCHECK_VERSION: v0.7.0
 
+  # The toolchain the single-version jobs use. The test matrix is separate and
+  # deliberately wider.
+  GO_VERSION: '1.26.x'
+
 jobs:
   test:
+    # Floor and ceiling. The lower entry must equal the `go` directive in
+    # go.mod — testing only above the floor leaves the version we advertise
+    # unverified, so a user on it finds the breakage instead of CI. The upper
+    # entry is the newest release. If go.mod's floor moves, move this matrix in
+    # the same commit.
     name: Go ${{ matrix.go }} tests
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.25.x', '1.26.x']
+        go: ['1.24.x', '1.26.x']
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -39,7 +55,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.26.x
+          go-version: ${{ env.GO_VERSION }}
           cache: false
       - run: go test -race ./...
 
@@ -50,7 +66,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.26.x
+          go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: gofmt
         shell: bash
@@ -62,10 +78,32 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
+
+      # The tagged variants are the point of this job, not an extra. Interop
+      # test files are excluded from an untagged `go vet ./...`, so a vet job
+      # that omits the tags reports clean while the tagged build has findings.
+      # Type-checking only; no container runtime needed.
+      - name: go vet -tags=interop
+        run: go vet -tags=interop ./...
+      - name: go vet -tags='interop interop_emulated'
+        run: go vet -tags='interop interop_emulated' ./...
+
       - name: Staticcheck 2026.1 (${{ env.STATICCHECK_VERSION }})
+        # Installed from a scratch directory: `go install pkg@version` is
+        # module-aware and ignores the surrounding go.mod, but running it
+        # elsewhere makes that independence obvious rather than a thing you have
+        # to know. A go.sum appearing here would silently repeal the
+        # zero-dependency policy.
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
+          (cd "$(mktemp -d)" && \
+            GOFLAGS= go install \
+              "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}")
           staticcheck ./...
+          staticcheck -tags=interop ./...
+          staticcheck -tags='interop interop_emulated' ./...
+
+      - name: Tools left go.mod alone
+        run: git diff --exit-code -- go.mod go.sum
 
   examples:
     name: Compile examples
@@ -74,21 +112,51 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.26.x
+          go-version: ${{ env.GO_VERSION }}
           cache: false
       - run: go test ./examples/...
 
+  supply-chain:
+    # The zero-dependency policy, mechanised. Without this assertion the policy
+    # erodes on the first convenient import and nothing notices — and every
+    # erosion is a go.sum entry this project does not control. See CLAUDE.md.
+    name: Zero dependencies
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - run: .github/scripts/check-no-dependencies.sh
+
   fuzz-smoke:
     name: Fuzz smoke (60s per discovered target)
+    # Pull requests only. This is the slowest job in the workflow by an order of
+    # magnitude, and on a push to main it re-fuzzes exactly the code the pull
+    # request already fuzzed. The nightly campaign is where sustained fuzzing
+    # belongs.
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.26.x
+          go-version: ${{ env.GO_VERSION }}
           cache: false
       - run: .github/scripts/run-fuzz.sh 60s 2
+      - name: Upload any crashers
+        # A crasher is a corpus file the engine wrote into the working tree. It
+        # has to reach the repository rather than evaporate with the runner:
+        # it is the reproducer, and regenerating it costs another campaign.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-smoke-crashers
+          path: '**/testdata/fuzz/**'
+          if-no-files-found: ignore
+          retention-days: 7
 
   apidiff:
     name: API compatibility
@@ -103,10 +171,17 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.26.x
+          go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Install pinned apidiff
-        run: go install golang.org/x/exp/cmd/apidiff@${APIDIFF_VERSION}
+        # From a scratch directory, and verified afterwards: `go install
+        # pkg@version` ignores the surrounding go.mod, but a go.sum appearing
+        # here would silently repeal the zero-dependency policy.
+        run: |
+          (cd "$(mktemp -d)" && \
+            GOFLAGS= go install \
+              "golang.org/x/exp/cmd/apidiff@${APIDIFF_VERSION}")
+          git diff --exit-code -- go.mod go.sum
       - name: Compare with latest release tag
         id: apidiff
         continue-on-error: true
