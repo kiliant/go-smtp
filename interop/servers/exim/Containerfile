@@ -15,7 +15,9 @@ RUN apt-get update \
 	&& mkdir -p /etc/exim4/certs \
 	&& openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
 		-keyout /etc/exim4/certs/exim.key -out /etc/exim4/certs/exim.crt \
-		-subj "/CN=mail.example.test"
+		-subj "/CN=mail.example.test" \
+	&& chown Debian-exim:Debian-exim /etc/exim4/certs/exim.key \
+	&& chmod 0400 /etc/exim4/certs/exim.key
 
 COPY exim4.conf /etc/exim4/exim4.conf.template
 RUN rm -f /etc/exim4/exim4.conf \
