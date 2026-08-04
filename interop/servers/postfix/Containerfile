@@ -1,7 +1,15 @@
 # Postfix interop target: docker.io/boky/postfix with a provisioned virtual
 # mailbox for interop@example.test, so the maildir sink (interop/harness
 # MaildirSink) can read back what the client delivered.
-FROM docker.io/boky/postfix@sha256:793418bea54f42ee119fd72ce39c46b5a5766e475c775d46f4d90e8edae10e6f
+#
+# Pinned to the multi-arch index digest, not a per-platform manifest digest.
+# A digest captured with `podman pull` on the arm64 dev machine resolves to
+# the arm64 child manifest, which builds fine locally but fails with "exec
+# format error" on the amd64 CI runner (github.com/kiliant/go-smtp nightly
+# run 30880637745). Verify with `crane manifest` or the registry API that a
+# replacement digest is the index (mediaType manifest.list/image.index), not
+# a single-platform child, before changing this again.
+FROM docker.io/boky/postfix@sha256:aafc772384232497bed875e1eb66b4d3e54ba1ebc86e2e185a6dc1dbc48182ef
 
 RUN groupadd -g 5000 vmail \
 	&& useradd -u 5000 -g vmail -d /var/mail/vhosts -m -s /usr/sbin/nologin vmail \

@@ -1,7 +1,10 @@
 # maddy interop target: an independent Go implementation, a different bug
 # class from the C servers (docs/INTEROP.md). The base image is digest-pinned;
 # entrypoint.sh provisions the interop account before starting the server.
-FROM docker.io/foxcpp/maddy@sha256:9f539c8669502fc4788a057b7afb67cae9c2f4ad7c188aa87fb24f5b031b3edc
+#
+# Pinned to the multi-arch index digest, not a per-platform manifest digest —
+# see interop/servers/postfix/Containerfile for why that distinction matters.
+FROM docker.io/foxcpp/maddy@sha256:de42151adff6388edb5e4ee88f60334fa1ab85e309485193ecb1c2db20203315
 
 RUN apk add --no-cache openssl
 

@@ -34,7 +34,10 @@ func init() {
 		Name: "mailpit",
 		Tier: harness.Tier1,
 		Run: harness.RunConfig{
-			Image: "docker.io/axllent/mailpit@sha256:e427cc84ef7b68b656a80093f677767d5eafdde67ec871238a670f0bd4d89ad2",
+			// Pinned to the multi-arch index digest, not a per-platform
+			// manifest digest — see interop/servers/postfix/Containerfile
+			// for why that distinction matters.
+			Image: "docker.io/axllent/mailpit@sha256:7f33095f80e901f6ad08028f06ca284aa58fe84942be5496008d041d3b9f4d4d",
 			Ports: []int{smtpPort, httpPort},
 		},
 		Ports: []harness.Port{
