@@ -34,11 +34,17 @@ jobs:
     # unverified, so a user on it finds the breakage instead of CI. The upper
     # entry is the newest release. If go.mod's floor moves, move this matrix in
     # the same commit.
-    name: Go ${{ matrix.go }} tests
-    runs-on: ubuntu-24.04
+    name: test (go ${{ matrix.go }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        # macOS is where this library is developed, and a mail client is exactly
+        # the kind of code whose network and TLS behaviour differs by platform;
+        # testing only linux left the development platform unverified. ubuntu is
+        # pinned so a runner-image rollout is deliberate, macos stays floating
+        # because Apple's images age out into dead labels.
+        os: [ubuntu-24.04, macos-latest]
         go: ['1.24.x', '1.26.x']
     steps:
       - uses: actions/checkout@v7
@@ -46,21 +52,14 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache: false
-      - run: go test ./...
-
-  race:
-    name: Race detector
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - run: go test -race ./...
+      # -race on every leg, which folds in the former standalone `race` job.
+      # That job ran the detector on one Go version and one OS; a data race that
+      # only shows up on the floor toolchain or on darwin was invisible to it,
+      # and a separate job re-runs the whole suite to test one flag.
+      - run: go test -race -count=1 ./...
 
   quality:
-    name: Formatting and static analysis
+    name: vet, staticcheck, gofmt
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -106,7 +105,7 @@ jobs:
         run: git diff --exit-code -- go.mod go.sum
 
   examples:
-    name: Compile examples
+    name: compile examples
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -120,7 +119,7 @@ jobs:
     # The zero-dependency policy, mechanised. Without this assertion the policy
     # erodes on the first convenient import and nothing notices — and every
     # erosion is a go.sum entry this project does not control. See CLAUDE.md.
-    name: Zero dependencies
+    name: zero dependencies
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -131,7 +130,7 @@ jobs:
       - run: .github/scripts/check-no-dependencies.sh
 
   fuzz-smoke:
-    name: Fuzz smoke (60s per discovered target)
+    name: fuzz-smoke
     # Pull requests only. This is the slowest job in the workflow by an order of
     # magnitude, and on a push to main it re-fuzzes exactly the code the pull
     # request already fuzzed. The nightly campaign is where sustained fuzzing
@@ -159,7 +158,7 @@ jobs:
           retention-days: 7
 
   apidiff:
-    name: API compatibility
+    name: apidiff
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
