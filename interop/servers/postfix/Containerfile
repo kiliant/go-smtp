@@ -11,18 +11,28 @@
 # a single-platform child, before changing this again.
 FROM docker.io/boky/postfix@sha256:aafc772384232497bed875e1eb66b4d3e54ba1ebc86e2e185a6dc1dbc48182ef
 
+# The vmailbox map lives outside /etc/postfix deliberately: the base image
+# declares /etc/postfix, /var/spool/postfix and /etc/opendkim/keys as
+# VOLUMEs, and podman 4.9.3 (pinned by .github/workflows/nightly.yml) does
+# not populate a fresh anonymous volume from this layer's build-time content
+# the way a newer local podman does. A file placed under /etc/postfix here
+# built fine and worked on every local run, then was silently absent at
+# container start in CI — "open database /etc/postfix/vmailbox.lmdb: No
+# such file or directory" on every RCPT, indefinitely, not a race (runs
+# 30880637745 through 30907184353). /etc/vmailbox sits outside all three
+# declared volumes, so it survives regardless of that population behavior.
 RUN groupadd -g 5000 vmail \
 	&& useradd -u 5000 -g vmail -d /var/mail/vhosts -m -s /usr/sbin/nologin vmail \
 	&& mkdir -p /var/mail/vhosts/example.test/interop/new \
 	           /var/mail/vhosts/example.test/interop/cur \
 	           /var/mail/vhosts/example.test/interop/tmp \
-	&& printf 'interop@example.test\texample.test/interop/\n' > /etc/postfix/vmailbox \
-	&& postmap lmdb:/etc/postfix/vmailbox \
+	&& printf 'interop@example.test\texample.test/interop/\n' > /etc/vmailbox \
+	&& postmap lmdb:/etc/vmailbox \
 	&& chown -R vmail:vmail /var/mail/vhosts
 
 ENV POSTFIX_virtual_mailbox_domains=example.test \
     POSTFIX_virtual_mailbox_base=/var/mail/vhosts \
-    POSTFIX_virtual_mailbox_maps=lmdb:/etc/postfix/vmailbox \
+    POSTFIX_virtual_mailbox_maps=lmdb:/etc/vmailbox \
     POSTFIX_virtual_uid_maps=static:5000 \
     POSTFIX_virtual_gid_maps=static:5000 \
     POSTFIX_virtual_minimum_uid=100 \
