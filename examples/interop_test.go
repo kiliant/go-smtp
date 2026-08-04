@@ -5,6 +5,7 @@ package examples_test
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,8 +113,10 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 		t.Log("SKIP forced partial rejection: this profile has no documented rejecting recipient; RcptBatch result handling still ran")
 	}
 	// A bounded synthetic reader proves Data consumes a caller-sized stream;
-	// it does not allocate the 1 MiB message in memory.
-	if _, err := c.Data(ctx, io.LimitReader(repeatingReader('x'), 1<<20), nil); err != nil {
+	// it does not allocate the 1 MiB message in memory. A minimal header
+	// section precedes the body: Maddy, Mailpit and Stalwart all reject a
+	// message that never resolves to a valid RFC 5322 header/body split.
+	if _, err := c.Data(ctx, syntheticMessage('x', 1<<20), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -124,7 +127,7 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 		if err := c.Rcpt(ctx, "interop@example.test", &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotifyFailure}}}}); err != nil {
 			t.Fatalf("DSN RCPT: %v", err)
 		}
-		if _, err := c.Data(ctx, io.LimitReader(repeatingReader('\n'), 1024), nil); err != nil {
+		if _, err := c.Data(ctx, syntheticMessage('\n', 1024), nil); err != nil {
 			t.Fatalf("DSN DATA: %v", err)
 		}
 
@@ -136,7 +139,7 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 		if err := c.Rcpt(ctx, "interop@example.test", nil); err != nil {
 			t.Fatalf("Extra RCPT: %v", err)
 		}
-		if _, err := c.Data(ctx, io.LimitReader(repeatingReader('\n'), 1024), nil); err != nil {
+		if _, err := c.Data(ctx, syntheticMessage('\n', 1024), nil); err != nil {
 			t.Fatalf("Extra DATA: %v", err)
 		}
 	} else {
@@ -153,16 +156,43 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 	if err := c.Rcpt(ctx, "interop@example.test", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Data(ctx, io.LimitReader(repeatingReader('b'), 1<<20), &smtpclient.DataOptions{UseChunking: true, ChunkSize: 64 << 10}); err != nil {
+	if _, err := c.Data(ctx, syntheticMessage('b', 1<<20), &smtpclient.DataOptions{UseChunking: true, ChunkSize: 64 << 10}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-type repeatingReader byte
+// syntheticMessage prepends a minimal RFC 5322 header section to a bounded
+// repeatingReader body, so strict server-side parsers see a well-formed
+// message rather than an unparsable stream of raw bytes.
+func syntheticMessage(b byte, bodyLen int64) io.Reader {
+	const header = "Subject: go-smtp interop synthetic message\r\n\r\n"
+	return io.MultiReader(strings.NewReader(header), io.LimitReader(newRepeatingReader(b), bodyLen))
+}
 
-func (r repeatingReader) Read(p []byte) (int, error) {
+// repeatingReaderLineWidth keeps synthetic message bodies within RFC 5321
+// §4.5.3.1.6's recommended line length. Without a periodic line break, a
+// large repeatingReader stream is a single oversized SMTP line, which
+// Maddy, Mailpit and Stalwart reject as unparsable rather than accept.
+const repeatingReaderLineWidth = 78
+
+type repeatingReader struct {
+	b   byte
+	col int
+}
+
+func newRepeatingReader(b byte) *repeatingReader {
+	return &repeatingReader{b: b}
+}
+
+func (r *repeatingReader) Read(p []byte) (int, error) {
 	for i := range p {
-		p[i] = byte(r)
+		if r.col == repeatingReaderLineWidth {
+			p[i] = '\n'
+			r.col = 0
+			continue
+		}
+		p[i] = r.b
+		r.col++
 	}
 	return len(p), nil
 }
