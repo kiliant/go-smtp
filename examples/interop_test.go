@@ -59,6 +59,16 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 	if assertion.Outcome != harness.OutcomeOK {
 		t.Fatalf("profile assertion: %v", assertion.Err)
 	}
+	// Some profiles (james) require runtime provisioning of the recipient
+	// mailbox before any RCPT to it will be accepted; NewSink is where that
+	// provisioning lives (interop/matrix_test.go relies on the same call).
+	// Other profiles' NewSink is a cheap, side-effect-free constructor, so
+	// calling it unconditionally here is safe.
+	if profile.NewSink != nil {
+		if _, err := profile.NewSink(ctx, h); err != nil {
+			t.Fatalf("provisioning sink: %v", err)
+		}
+	}
 	port, lmtp := profile.LMTPPort()
 	if smtpPort, ok := profile.SMTPPort(); ok {
 		port, lmtp = smtpPort, false
