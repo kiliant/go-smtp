@@ -6,6 +6,8 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // BDAT framing per RFC 3030: "BDAT <size>[ LAST]\r\n" followed by exactly
@@ -26,7 +28,53 @@ var (
 	// ErrBDATShortSource is returned by CopyBDATChunk when r produced fewer
 	// than size bytes.
 	ErrBDATShortSource = errors.New("smtpwire: BDAT chunk source exhausted before announced size")
+	// ErrBDATCommandSyntax is returned when a server-side BDAT argument is
+	// not exactly "<size>" or "<size> LAST".
+	ErrBDATCommandSyntax = errors.New("smtpwire: invalid BDAT command syntax")
 )
+
+// BDATCommand is the decoded framing portion of a BDAT command.
+type BDATCommand struct {
+	Size uint64
+	Last bool
+}
+
+// ParseBDATArgument parses "<size> [LAST]" and enforces the configured chunk
+// limit before a server attempts to read any content octets.
+func ParseBDATArgument(argument string, limits Limits) (BDATCommand, error) {
+	for i := 0; i < len(argument); i++ {
+		c := argument[i]
+		if c != ' ' && (c < 0x21 || c > 0x7e) {
+			return BDATCommand{}, ErrBDATCommandSyntax
+		}
+	}
+	fields := strings.Fields(argument)
+	if len(fields) < 1 || len(fields) > 2 || (len(fields) == 2 && !strings.EqualFold(fields[1], "LAST")) {
+		return BDATCommand{}, ErrBDATCommandSyntax
+	}
+	if fields[0] == "" || strings.HasPrefix(fields[0], "+") || strings.HasPrefix(fields[0], "-") {
+		return BDATCommand{}, ErrBDATCommandSyntax
+	}
+	size, err := strconv.ParseUint(fields[0], 10, 64)
+	if err != nil {
+		return BDATCommand{}, fmt.Errorf("%w: %v", ErrBDATCommandSyntax, err)
+	}
+	if err := checkBDATSize(size, limits); err != nil {
+		return BDATCommand{}, err
+	}
+	return BDATCommand{Size: size, Last: len(fields) == 2}, nil
+}
+
+// ReadBDATChunk copies exactly size bytes from the LineReader's existing
+// buffer. Reusing that buffer is essential: bytes beyond the chunk may already
+// be the next pipelined BDAT command and must not be dropped or over-read.
+// deadline is applied to the underlying connection before content is read.
+func (lr *LineReader) ReadBDATChunk(w io.Writer, size uint64, deadline time.Time, limits Limits) (int64, error) {
+	if err := lr.setDeadline(deadline); err != nil {
+		return 0, err
+	}
+	return CopyBDATChunk(w, lr.br, size, limits)
+}
 
 // checkBDATSize validates size against limits before any write or copy is
 // attempted, guarding both an oversized-by-policy chunk and an

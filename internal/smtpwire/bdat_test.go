@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEncodeBDATCommand(t *testing.T) {
@@ -90,6 +91,81 @@ func TestCopyBDATChunkShortSource(t *testing.T) {
 	}
 	if got.String() != "short" {
 		t.Errorf("payload = %q, want %q", got.String(), "short")
+	}
+}
+
+func TestParseBDATArgument(t *testing.T) {
+	tests := []struct {
+		argument string
+		want     BDATCommand
+		wantErr  error
+	}{
+		{argument: "0", want: BDATCommand{}},
+		{argument: "123 LAST", want: BDATCommand{Size: 123, Last: true}},
+		{argument: "123 last", want: BDATCommand{Size: 123, Last: true}},
+		{argument: "", wantErr: ErrBDATCommandSyntax},
+		{argument: "-1", wantErr: ErrBDATCommandSyntax},
+		{argument: "1 MORE", wantErr: ErrBDATCommandSyntax},
+		{argument: "999", wantErr: ErrBDATChunkTooLarge},
+	}
+	for _, tt := range tests {
+		got, err := ParseBDATArgument(tt.argument, Limits{MaxBDATChunkSize: 512})
+		if !errors.Is(err, tt.wantErr) {
+			t.Errorf("ParseBDATArgument(%q) error = %v, want %v", tt.argument, err, tt.wantErr)
+		}
+		if got != tt.want {
+			t.Errorf("ParseBDATArgument(%q) = %#v, want %#v", tt.argument, got, tt.want)
+		}
+	}
+}
+
+func TestReadBDATChunkPreservesPipelinedCommand(t *testing.T) {
+	lr := NewLineReader(strings.NewReader("abcNOOP\r\n"))
+	var chunk bytes.Buffer
+	n, err := lr.ReadBDATChunk(&chunk, 3, time.Time{}, Limits{})
+	if err != nil {
+		t.Fatalf("ReadBDATChunk: %v", err)
+	}
+	if n != 3 || chunk.String() != "abc" {
+		t.Fatalf("chunk = (%d, %q), want (3, abc)", n, chunk.String())
+	}
+	command, err := lr.ReadCommand(time.Time{}, Limits{})
+	if err != nil {
+		t.Fatalf("ReadCommand after chunk: %v", err)
+	}
+	if command != (Command{Verb: "NOOP"}) {
+		t.Fatalf("command = %#v", command)
+	}
+}
+
+func TestReadBDATChunkAppliesDeadline(t *testing.T) {
+	dr := &deadlineReader{Reader: strings.NewReader("abc")}
+	lr := NewLineReader(dr)
+	deadline := time.Now().Add(time.Minute)
+	var chunk bytes.Buffer
+	if _, err := lr.ReadBDATChunk(&chunk, 3, deadline, Limits{}); err != nil {
+		t.Fatalf("ReadBDATChunk: %v", err)
+	}
+	if dr.calls != 1 || !dr.lastDeadline.Equal(deadline) {
+		t.Fatalf("deadline = (%d calls, %v), want (1, %v)", dr.calls, dr.lastDeadline, deadline)
+	}
+}
+
+func TestBDATCommandEncodeDecodeRoundTrip(t *testing.T) {
+	var wire bytes.Buffer
+	if err := EncodeBDATCommand(&wire, 123, true, Limits{}); err != nil {
+		t.Fatalf("EncodeBDATCommand: %v", err)
+	}
+	command, err := NewLineReader(&wire).ReadCommand(time.Time{}, Limits{})
+	if err != nil {
+		t.Fatalf("ReadCommand: %v", err)
+	}
+	got, err := ParseBDATArgument(command.Argument, Limits{})
+	if err != nil {
+		t.Fatalf("ParseBDATArgument: %v", err)
+	}
+	if command.Verb != "BDAT" || got != (BDATCommand{Size: 123, Last: true}) {
+		t.Fatalf("round trip = (%#v, %#v)", command, got)
 	}
 }
 
