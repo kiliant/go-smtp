@@ -2,7 +2,10 @@
 set -euo pipefail
 
 output=${1:-apidiff-report.md}
-module=$(go list -m -f '{{.Path}}')
+# The repository workspace may contain independently versioned nested modules.
+# This gate protects the released root module; each nested module owns its own
+# baseline and release gate.
+module=$(GOWORK=off go list -m -f '{{.Path}}')
 baseline=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)
 marker='<!-- go-smtp-apidiff -->'
 
@@ -24,8 +27,8 @@ trap 'rm -rf -- "$tmp"' EXIT
 mkdir "$tmp/old"
 git archive "$baseline" | tar -x -C "$tmp/old"
 
-(cd "$tmp/old" && apidiff -m -w "$tmp/old.export" "$module")
-apidiff -m -w "$tmp/new.export" "$module"
+(cd "$tmp/old" && GOWORK=off apidiff -m -w "$tmp/old.export" "$module")
+GOWORK=off apidiff -m -w "$tmp/new.export" "$module"
 apidiff -m "$tmp/old.export" "$tmp/new.export" >"$tmp/all.txt"
 apidiff -m -incompatible "$tmp/old.export" "$tmp/new.export" >"$tmp/incompatible.txt"
 
