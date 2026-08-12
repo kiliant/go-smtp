@@ -33,6 +33,8 @@ servers exercise the capability itself, not merely advertise it.
 | ENHANCEDSTATUSCODES | 2034 | T01,T02,T03 | done [^esc] |
 | AUTH | 4954 | T04 | done |
 | LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | done [^lmtp] |
+| `Received:` trace-field generation | 5321 §4.4 | T17 | done [^received] |
+| `Received:` `WITH` transmission types | 3848 | T17 | done [^received] |
 
 [^vrfy]: The IANA registry cites `draft-ietf-emailcore-rfc5321bis` for `VRFY`.
     That draft is at revision 44, sits in the RFC Editor queue in state
@@ -66,6 +68,13 @@ servers exercise the capability itself, not merely advertise it.
     layer gates semantic extraction on the server having advertised
     `ENHANCEDSTATUSCODES`; greeting and EHLO failures remain ungated because no
     extension list has been negotiated yet.
+
+[^received]: T17 generates the trace field from actual session state and omits
+    `FOR` unless there is exactly one recipient. The `SMTP`, `ESMTP`, `ESMTPA`,
+    `ESMTPS`, `ESMTPSA`, `LMTP`, `LMTPA`, `LMTPS`, and `LMTPSA` values were
+    checked against IANA's *Mail Transmission Types for the "Received:" Header
+    Field* registry on 2026-08-12; the authenticated and/or TLS variants cite
+    RFC 3848 there.
 
 ## Group A — transport core (task T08)
 

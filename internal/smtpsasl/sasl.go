@@ -1,4 +1,5 @@
-// Package smtpsasl implements the SASL mechanisms used by smtpclient.
+// Package smtpsasl implements the SASL initiator and responder mechanisms used
+// by the SMTP client and server.
 // It deliberately contains no SMTP framing: callers exchange the returned
 // byte strings using the protocol that embeds SASL.
 package smtpsasl

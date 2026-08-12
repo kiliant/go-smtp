@@ -1,13 +1,15 @@
-// Package smtpwire implements the SMTP wire grammar (RFC 5321 §4.2 reply
-// framing, RFC 3463 enhanced status codes, RFC 5321 §4.1.1.1 EHLO parsing,
-// esmtp-param / xtext encoding, RFC 5321 §4.5.2 dot-stuffing transparency and
-// RFC 3030 BDAT framing) as a set of total, streaming, hand-written codecs.
+// Package smtpwire implements the SMTP wire grammar in both directions:
+// RFC 5321 command and reply framing, path parsing, EHLO parsing and
+// advertisement encoding, RFC 3463 enhanced status codes, esmtp-param / xtext
+// encoding, RFC 5321 §4.5.2 dot-stuffing transparency, RFC 3030 BDAT framing,
+// and RFC 5321 §4.4 Received-field generation. Its codecs are total, streaming,
+// bounded, and hand-written.
 //
 // This package deals in wire primitives only: reply lines, three-digit
 // codes, keywords, parameters and raw byte transparency. It does not know
 // about the root smtp package's semantic types (smtp.Error,
 // smtp.EnhancedCode, per-recipient results) and must never import that
-// package — semantic assembly happens in smtpclient. See
+// package — semantic assembly happens in smtpclient and smtpserver. See
 // docs/tasks/T01-wire-codec.md and docs/ARCHITECTURE.md §Parser.
 //
 // Nothing here is exported outside the module: this package is internal/ and
@@ -33,6 +35,11 @@ import (
 // package default for that field, so the zero Limits{} is always safe to use
 // directly — callers are never forced to know the defaults just to avoid an
 // unusable all-zero limit set.
+//
+// The wire limits deliberately remain one direction-neutral type rather than
+// being split into client/server variants: BDAT framing is shared by both
+// directions, fields default independently, and this internal package's
+// qualifier already distinguishes it from RFC 9422's public smtp.Limits.
 type Limits struct {
 	// MaxReplyLineLength caps a single reply line's text, excluding the
 	// trailing CRLF. RFC 5321 §4.5.3.1 specifies 512 octets including CRLF
@@ -48,15 +55,20 @@ type Limits struct {
 	// MaxBDATChunkSize caps the chunk size a BDAT command may announce,
 	// enforced before any chunk is written or copied.
 	MaxBDATChunkSize int64
+	// MaxCommandLineLength caps one client command including its terminating
+	// CRLF. RFC 5321 requires servers to accept at least 512 octets; the
+	// default is larger while still bounding unauthenticated input tightly.
+	MaxCommandLineLength int
 }
 
 // Package defaults. Exported indirectly via DefaultLimits and via Limits'
 // zero-value fallback behaviour.
 const (
-	defaultMaxReplyLineLength = 8192     // well above the 512-octet RFC minimum
-	defaultMaxReplyLines      = 1000     // generous EHLO extension list
-	defaultMaxReplySize       = 1 << 20  // 1 MiB total reply text
-	defaultMaxBDATChunkSize   = 64 << 20 // 64 MiB; smtpclient may lower per negotiated SIZE
+	defaultMaxReplyLineLength   = 8192     // well above the 512-octet RFC minimum
+	defaultMaxReplyLines        = 1000     // generous EHLO extension list
+	defaultMaxReplySize         = 1 << 20  // 1 MiB total reply text
+	defaultMaxBDATChunkSize     = 64 << 20 // 64 MiB; smtpclient may lower per negotiated SIZE
+	defaultMaxCommandLineLength = 4096     // includes CRLF; safely above RFC 5321's 512-octet minimum
 )
 
 // DefaultLimits returns the package's built-in limits explicitly. Equivalent
@@ -65,10 +77,11 @@ const (
 // only some fields.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxReplyLineLength: defaultMaxReplyLineLength,
-		MaxReplyLines:      defaultMaxReplyLines,
-		MaxReplySize:       defaultMaxReplySize,
-		MaxBDATChunkSize:   defaultMaxBDATChunkSize,
+		MaxReplyLineLength:   defaultMaxReplyLineLength,
+		MaxReplyLines:        defaultMaxReplyLines,
+		MaxReplySize:         defaultMaxReplySize,
+		MaxBDATChunkSize:     defaultMaxBDATChunkSize,
+		MaxCommandLineLength: defaultMaxCommandLineLength,
 	}
 }
 
@@ -84,6 +97,9 @@ func (l Limits) withDefaults() Limits {
 	}
 	if l.MaxBDATChunkSize <= 0 {
 		l.MaxBDATChunkSize = defaultMaxBDATChunkSize
+	}
+	if l.MaxCommandLineLength <= 0 {
+		l.MaxCommandLineLength = defaultMaxCommandLineLength
 	}
 	return l
 }
@@ -161,6 +177,19 @@ func NewLineReader(r io.Reader) *LineReader {
 // be attributed to a later command; it never treats an empty buffer as proof
 // that the peer cannot send a delayed unsolicited reply.
 func (lr *LineReader) Buffered() int { return lr.br.Buffered() }
+
+// DiscardBuffered discards and reports only bytes the LineReader has already
+// prefetched. It never reads from the underlying source. A server uses this at
+// the STARTTLS boundary to reject illegal plaintext pipelined after the command
+// without consuming any TLS handshake bytes that arrive later on the socket.
+func (lr *LineReader) DiscardBuffered() int {
+	n := lr.br.Buffered()
+	if n == 0 {
+		return 0
+	}
+	_, _ = lr.br.Discard(n)
+	return n
+}
 
 // setDeadline applies t to the underlying reader if it is deadline-capable.
 // A zero t means "no deadline" and is a no-op. Readers that are not

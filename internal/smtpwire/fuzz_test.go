@@ -118,10 +118,13 @@ func FuzzDotStuffRoundTrip(f *testing.F) {
 	f.Add([]byte(""))
 	f.Add([]byte("\r\n"))
 	f.Add([]byte{0x00, 0x0d, 0x0a, 0x2e, 0x0d, 0x0a})
-	// Bare CR/LF vectors: RFC 5321 §2.3.8 normalisation, and the
-	// "<CR>.<CR><LF>" smuggling shape the writer used to pass through
-	// unstuffed.
+	// Bare CR/LF vectors: RFC 5321 §2.3.8 normalisation, plus the
+	// <LF>.<LF>, <LF>.<CRLF>, and <CR>.<CRLF> boundary-confusion families
+	// published by SEC Consult and Postfix's SMTP-smuggling analysis:
+	// https://sec-consult.com/blog/detail/smtp-smuggling-spoofing-e-mails-worldwide/
+	// https://www.postfix.org/smtp-smuggling.html
 	f.Add([]byte("a\r.\r\n"))
+	f.Add([]byte("a\n.\r\nb"))
 	f.Add([]byte("\r"))
 	f.Add([]byte("\n"))
 	f.Add([]byte("\r\r\n\n"))
