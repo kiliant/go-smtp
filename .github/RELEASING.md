@@ -28,16 +28,32 @@ Run this checklist on the exact candidate commit:
    including race, gofmt, vet under every interop tag set, the zero-dependency
    gate, Staticcheck 2026.1 (`v0.7.0`), compiled examples, and the API-surface
    gates.
-5. Run the discovered fuzz campaign for 10 minutes per target:
-   `.github/scripts/run-fuzz.sh 10m 2`. Review every failure and ensure the
-   discovered-target count matches the result count.
-6. Re-run the native Podman matrix and inspect visible skips:
-   `.github/scripts/run-interop.sh interop`. For a major or final v1 release,
-   also run Tier 3 explicitly:
-   `.github/scripts/run-interop.sh 'interop interop_emulated'`.
+5. Run the discovered fuzz campaign for 10 minutes per target. Prefer
+   `gh workflow run 'Fuzz (long)' --ref <candidate>` — it shards eight ways at
+   `FUZZ_PARALLEL=1`, which is the duration policy at the concurrency the
+   campaign is designed for, and it uploads the artifacts the release notes
+   cite. Locally the equivalent is `.github/scripts/fuzz.sh 10m`, optionally
+   sharded with `SHARD_INDEX`/`SHARD_TOTAL`; raising `FUZZ_PARALLEL` starves
+   each target of executions and provokes the deadline artifact that script
+   documents. Review every failure and ensure the discovered-target count
+   matches the result count.
+6. Re-run the interop matrix and inspect visible skips:
+   `gh workflow run Interop --ref <candidate>`, which runs the native profiles
+   and — because the Tier 3 job is skipped only on `push` — the emulated ones
+   too, natively on amd64 runners. For a major or final v1 release Tier 3 is
+   required, not optional. The local equivalents are
+   `.github/scripts/run-interop.sh interop` and
+   `.github/scripts/run-interop.sh 'interop interop_emulated'`; on an arm64 host
+   the latter genuinely emulates and is slow.
 7. Run the pinned apidiff tool against the latest release tag and review both
    compatible and incompatible changes. Before v1, reconcile every incompatible
-   line with CHANGELOG.md. At and after v1, there must be no incompatibilities.
+   line with CHANGELOG.md. At and after v1, there must be no incompatibilities —
+   with one narrow, objective exception: an **alias-preserving move** of a symbol
+   between packages is reported as incompatible while breaking nobody. Such a
+   report may be overruled if and only if `smtpclient/alias_compat_test.go`
+   carries a compile-time identity assertion for every symbol apidiff names, and
+   that file compiles and passes. No assertion, no overrule. See
+   `docs/API-STABILITY.md` §10.
 8. Confirm there are no unreviewed dependency additions (`go.sum` must remain
    absent), no unpinned CI tools or container images, and no generated-file
    drift.
