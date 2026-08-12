@@ -2,8 +2,9 @@
 # maintained multi-arch image under docker.io/exim/exim4 (confirmed 2026-08-02:
 # "requested access to the resource is denied"). This mirrors the sibling
 # repo's approach for Cyrus. arm64-native by construction, since it builds on
-# whatever platform podman build runs on.
-FROM debian:bookworm-slim
+# whatever platform podman build runs on. bookworm-slim is pinned to its
+# multi-arch index so an upstream base refresh cannot change the test image.
+FROM debian@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
 
 RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

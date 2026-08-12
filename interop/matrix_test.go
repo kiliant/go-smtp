@@ -13,6 +13,8 @@ package interop
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +35,41 @@ import (
 )
 
 const recipient = "interop@example.test"
+
+func TestProfilesUseDigestPinnedImages(t *testing.T) {
+	const digestMarker = "@sha256:"
+
+	for _, p := range harness.Profiles() {
+		if p.Run.Image != "" {
+			if !strings.Contains(p.Run.Image, digestMarker) {
+				t.Errorf("profile %s image %q is not digest-pinned", p.Name, p.Run.Image)
+			}
+			continue
+		}
+
+		containerfile := filepath.Join(p.Run.ContainerfileDir, "Containerfile")
+		data, err := os.ReadFile(containerfile)
+		if err != nil {
+			t.Errorf("profile %s: reading %s: %v", p.Name, containerfile, err)
+			continue
+		}
+
+		foundFrom := false
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 || !strings.EqualFold(fields[0], "FROM") {
+				continue
+			}
+			foundFrom = true
+			if !strings.Contains(fields[1], digestMarker) {
+				t.Errorf("profile %s Containerfile base %q is not digest-pinned", p.Name, fields[1])
+			}
+		}
+		if !foundFrom {
+			t.Errorf("profile %s Containerfile %s has no FROM instruction", p.Name, containerfile)
+		}
+	}
+}
 
 // TestMatrix starts every profile the harness config selects, asserts its
 // advertised capabilities against what its profile claims, then sends a real

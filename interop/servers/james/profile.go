@@ -5,7 +5,8 @@
 // rather than inherit the claim: `podman manifest inspect
 // docker.io/apache/james:demo-3.8.2` returns no manifest list (a single-arch
 // image, not a multi-arch one), and `podman inspect` on the pulled image
-// reports Architecture=amd64, Os=linux. Tier 3, emulated-only — this
+// reports Architecture=amd64, Os=linux. The profile pins that manifest's
+// digest rather than the mutable tag. Tier 3, emulated-only — this
 // profile is registered but Selected() excludes it unless the
 // interop_emulated build tag is present (see docs/INTEROP.md).
 //
@@ -32,7 +33,7 @@ func init() {
 		Name: "james",
 		Tier: harness.Tier3,
 		Run: harness.RunConfig{
-			Image: "docker.io/apache/james:demo-3.8.2",
+			Image: "docker.io/apache/james@sha256:f17517c824dc27ac3ec30ab3983c1bced2b7c9fe79f1e3f406c03d5fb2742179",
 			Ports: []int{smtpPort, imapsPort},
 		},
 		Ports: []harness.Port{
