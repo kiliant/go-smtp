@@ -4,11 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-There are no release tags yet, so the complete project history remains under
-Unreleased. Conventional Commit subjects are the input; entries below describe
-user-visible outcomes rather than repeating commit messages.
+Conventional Commit subjects are the input; entries below describe user-visible
+outcomes rather than repeating commit messages.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-08-12
+
+The first stable release, and the API freeze. From here the exported surface of
+`github.com/kiliant/go-smtp` and `github.com/kiliant/go-smtp/smtpclient` changes
+additively only; removals require two minor releases of deprecation and do not
+land before v2. The pre-v1 incompatibilities recorded below were the last
+reshaping opportunity and are listed for the record, not as upgrade steps —
+there is no earlier tag to upgrade from.
 
 ### Added
 
@@ -94,3 +102,6 @@ The authoritative tag, release-candidate, compatibility, and pre-tag checklist
 is [`.github/RELEASING.md`](.github/RELEASING.md). Every future release moves
 the relevant Unreleased entries into a dated version section; every exported
 API change must continue to be labeled explicitly.
+
+[Unreleased]: https://github.com/kiliant/go-smtp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/kiliant/go-smtp/releases/tag/v1.0.0
