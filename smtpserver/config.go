@@ -57,6 +57,35 @@ func validateConstruction(config constructionConfig) error {
 	return nil
 }
 
+func validateSession(session *Session) error {
+	if session == nil {
+		return errors.New("smtpserver: invalid backend session: Session is nil")
+	}
+	var problems []string
+	if session.Mail == nil {
+		problems = append(problems, "Session.Mail is required")
+	}
+	if session.Rcpt == nil {
+		problems = append(problems, "Session.Rcpt is required")
+	}
+	if session.Data == nil {
+		problems = append(problems, "Session.Data is required")
+	}
+	if session.Reset == nil {
+		problems = append(problems, "Session.Reset is required")
+	}
+	if session.Close == nil {
+		problems = append(problems, "Session.Close is required")
+	}
+	if (session.Authenticate != nil || session.ChallengeResponse != nil || session.SCRAMCredentials != nil) && session.CommitAuth == nil {
+		problems = append(problems, "Session.CommitAuth is required when authentication verification is configured")
+	}
+	if len(problems) != 0 {
+		return errors.New("smtpserver: invalid backend session: " + joinProblems(problems))
+	}
+	return nil
+}
+
 func listenerPort(addr net.Addr) int {
 	if tcp, ok := addr.(*net.TCPAddr); ok {
 		return tcp.Port

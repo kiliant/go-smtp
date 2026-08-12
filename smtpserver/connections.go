@@ -16,18 +16,23 @@ type activeConnection struct {
 type connectionRegistry struct {
 	mu        sync.Mutex
 	accepting bool
+	max       int
 	active    map[net.Conn]activeConnection
 	wait      sync.WaitGroup
 }
 
-func newConnectionRegistry() *connectionRegistry {
-	return &connectionRegistry{accepting: true, active: make(map[net.Conn]activeConnection)}
+func newConnectionRegistry(maximum ...int) *connectionRegistry {
+	max := 0
+	if len(maximum) > 0 {
+		max = maximum[0]
+	}
+	return &connectionRegistry{accepting: true, max: max, active: make(map[net.Conn]activeConnection)}
 }
 
 func (r *connectionRegistry) register(conn net.Conn, cancel context.CancelFunc) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.accepting {
+	if !r.accepting || r.max > 0 && len(r.active) >= r.max {
 		return false
 	}
 	r.active[conn] = activeConnection{conn: conn, cancel: cancel}

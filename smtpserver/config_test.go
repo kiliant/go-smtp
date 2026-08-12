@@ -1,9 +1,13 @@
 package smtpserver
 
 import (
+	"context"
+	"io"
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/kiliant/go-smtp"
 )
 
 func TestValidateConstructionReportsEveryProblem(t *testing.T) {
@@ -28,6 +32,33 @@ func TestValidateConstructionReportsEveryProblem(t *testing.T) {
 		if !strings.Contains(err.Error(), problem) {
 			t.Errorf("error %q does not name %q", err, problem)
 		}
+	}
+}
+
+func TestValidateSessionReportsEveryMissingHandler(t *testing.T) {
+	err := validateSession(&Session{Authenticate: func(context.Context, *Credentials, *AuthenticateOptions) (*AuthResult, error) {
+		return nil, nil
+	}})
+	if err == nil {
+		t.Fatal("invalid Session accepted")
+	}
+	for _, field := range []string{"Session.Mail", "Session.Rcpt", "Session.Data", "Session.Reset", "Session.Close", "Session.CommitAuth"} {
+		if !strings.Contains(err.Error(), field) {
+			t.Errorf("error %q does not name %s", err, field)
+		}
+	}
+}
+
+func TestValidateSessionAcceptsRequiredHandlers(t *testing.T) {
+	session := &Session{
+		Mail:  func(context.Context, string, *smtp.MailOptions, *MailOptions) error { return nil },
+		Rcpt:  func(context.Context, string, *smtp.RcptOptions, *RcptOptions) error { return nil },
+		Data:  func(context.Context, io.Reader, *DataOptions) (smtp.DataResult, error) { return nil, nil },
+		Reset: func(context.Context, ResetReason, *ResetOptions) {},
+		Close: func(context.Context, *CloseOptions) {},
+	}
+	if err := validateSession(session); err != nil {
+		t.Fatal(err)
 	}
 }
 
