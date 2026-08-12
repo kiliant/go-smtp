@@ -117,6 +117,36 @@ func TestSpoolPerMessageLimitDoesNotReserve(t *testing.T) {
 	}
 }
 
+func TestSpoolChunkWriterConsumesAnnouncedChunkAfterFailure(t *testing.T) {
+	opts := testSpoolOptions(t)
+	opts.MaxBytes = 3
+	manager, err := newSpoolManager(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spool, err := manager.newSpool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer spool.Close()
+
+	source := strings.NewReader("abcdefNEXT")
+	writer := &spoolChunkWriter{spool: spool}
+	if n, err := io.CopyN(writer, source, 6); err != nil || n != 6 {
+		t.Fatalf("CopyN = (%d, %v), want (6, nil)", n, err)
+	}
+	if !errors.Is(writer.Err(), errSpoolMessageTooLarge) {
+		t.Fatalf("chunk error = %v, want errSpoolMessageTooLarge", writer.Err())
+	}
+	remainder, err := io.ReadAll(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(remainder) != "NEXT" {
+		t.Fatalf("source remainder = %q, want NEXT", remainder)
+	}
+}
+
 func TestSpoolAggregateReservationIsIncremental(t *testing.T) {
 	opts := testSpoolOptions(t)
 	opts.MaxTotalBytes = 6

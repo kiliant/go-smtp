@@ -115,6 +115,29 @@ type spool struct {
 	closed         bool
 }
 
+// spoolChunkWriter records the first storage failure but continues reporting
+// successful consumption to the framer. RFC 3030 requires the server to accept
+// and discard the full announced chunk before it sends a failure reply; letting
+// io.CopyN observe the spool error would stop the socket read too early.
+type spoolChunkWriter struct {
+	spool *spool
+	err   error
+}
+
+func (w *spoolChunkWriter) Write(p []byte) (int, error) {
+	if w.err == nil {
+		if _, err := w.spool.Write(p); err != nil {
+			w.err = err
+			// The framer already obtained all of p from the peer. Returning its
+			// full length makes that consumption authoritative even when only a
+			// prefix reached storage.
+		}
+	}
+	return len(p), nil
+}
+
+func (w *spoolChunkWriter) Err() error { return w.err }
+
 func (s *spool) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
