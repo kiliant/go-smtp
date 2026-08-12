@@ -1,6 +1,9 @@
 package smtpserver
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // listenerMode is fixed when a listener is constructed. It is intentionally
 // private: SMTP and LMTP are a closed implementation choice, not an extensible
@@ -115,7 +118,7 @@ var commandRules = map[string]commandRule{
 }
 
 func (s protocolState) legality(verb string) commandLegality {
-	rule, ok := commandRules[verb]
+	rule, ok := commandRules[strings.ToUpper(verb)]
 	if !ok {
 		return commandUnknown
 	}

@@ -23,6 +23,7 @@ func TestCommandRulesCoverModesAndFailedBDAT(t *testing.T) {
 		{name: "failed BDAT allows QUIT", mode: modeSMTP, phase: phaseFailedBDAT, verb: "QUIT", want: commandAllowed},
 		{name: "failed BDAT rejects MAIL", mode: modeSMTP, phase: phaseFailedBDAT, verb: "MAIL", want: commandWrongState},
 		{name: "unknown verb", mode: modeSMTP, phase: phaseReady, verb: "FUTURE", want: commandUnknown},
+		{name: "matching is case insensitive", mode: modeSMTP, phase: phaseReady, verb: "mAiL", want: commandAllowed},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
