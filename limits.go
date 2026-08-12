@@ -6,14 +6,21 @@ import (
 	"strings"
 )
 
-// Limits is the registered subset of RFC 9422 LIMITS server limits. Unknown
-// limits remain available through the raw parameter string of the LIMITS EHLO
-// keyword, so later IANA registrations do not need an API change before callers
-// can observe them.
+// Limits is the registered subset of RFC 9422 LIMITS server limits.
 //
 // LIMITS is an advertisement: a client parses it, a server produces it. It lives
 // in package smtp rather than in a direction-specific package for that reason —
 // see docs/API-STABILITY.md §10.
+//
+// RFC 9422 §5 creates an IANA registry, so limit keywords will be added. The two
+// directions are not yet symmetric about them, and this is deliberate rather
+// than overlooked: a *reading* client sees an unmodelled limit in the raw
+// parameter string of the LIMITS keyword, via smtpclient.Client.Extension, so
+// nothing is lost. An *advertising* server has no way to express one — this type
+// has three uint32 fields, no Extra, and this package ships a parser with no
+// formatter. Adding either is additive (the field guard below is what makes it
+// so) and belongs to the task that gives a server something to advertise with,
+// not to a speculative field now.
 //
 // Callers constructing a Limits literal must use keyed fields.
 type Limits struct {

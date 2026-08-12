@@ -36,6 +36,14 @@ type MailOptions struct {
 	// the AUTH= MAIL parameter defined by RFC 4954 §5. It is separate from
 	// the AUTH command. The client xtext-encodes this value before sending it.
 	// An empty value omits the parameter.
+	//
+	// RFC 4954 §5 gives AUTH=<> — "the message is not authenticated" asserted
+	// explicitly — a meaning distinct from omitting the parameter entirely.
+	// The representation for it is Auth: "<>", which survives xtext encoding
+	// unchanged because '<' and '>' are passthrough bytes. Both directions use
+	// that representation: a receive-side parser must fill "<>" here rather
+	// than collapsing it to the empty string, which would lose the
+	// distinction.
 	Auth string
 	// Extra carries esmtp-params this library does not model with a typed
 	// field. It is the escape hatch required by docs/API-STABILITY.md §1b:

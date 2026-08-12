@@ -96,13 +96,29 @@ A syntactically **invalid** parameter is not a fourth kind and needs no field: i
 is a parse failure, reported as an error like every other malformed input, and a
 server turns that error into a `501` naming the parameter.
 
-**Decision (T16, 2026-08-12): the original spelling is a field on `Param`, not a
-parallel raw slice.** A parallel slice would have to be index-matched against
-`Extra` by every consumer, and the association is exactly what must not be lost.
-`Param`'s doc comment already reserves the right to grow, so the field is
-additive and **lands with the receive-side parser in T17, not before** — T16 adds
-no field that nothing populates, per its own no-anticipation rule. T17 is bound
-by this decision; it does not get to revisit the shape.
+**Decision (T16, 2026-08-12), by kind of parameter.** The two kinds need
+different answers, and an earlier revision of this section gave one answer to
+both — caught in api-guardian review, because the answer it gave cannot reach the
+case row 3 was written for:
+
+- **Unknown, syntactically valid** — the original spelling is a field on `Param`,
+  not a parallel raw slice. A parallel slice would have to be index-matched
+  against `Extra` by every consumer, and the association is exactly what must not
+  be lost. **T17 is bound by this**; it does not get to revisit this shape.
+- **Recognised and decoded** — a `Param` field cannot serve this case at all. A
+  recognised parameter is row 1: parsed into its typed field, never entering
+  `Extra`, so there is no `Param` to hang a spelling on. And the spelling is
+  genuinely unrecoverable from the decoded value, because `EncodeXtext` documents
+  that bytes 33–126 other than `+` and `=` pass through unchanged — a peer may
+  legally send `+41` where this library emits `A`, and both decode to `"A"`. This
+  applies today to `ENVID=` (`DSNMailOptions.EnvelopeID`), `ORCPT=`
+  (`DSNRcptOptions.Original`), `AUTH=` (`MailOptions.Auth`) and `SUBMITTER=`
+  (`LegacyOptions.Submitter`), and to every future xtext parameter this library
+  models with a typed field. **The shape is T17's to choose** against its parser.
+  It is additive either way: every affected struct carries the §7 guard.
+
+Both land with the receive-side parser in T17, not before — T16 adds no field that
+nothing populates, per its own no-anticipation rule.
 
 ### 1c. Enhanced status codes — server to client, must not be flattened
 
@@ -421,9 +437,12 @@ Consequences, all three binding:
    at that line.
 2. **Post-v1.0 the CI `apidiff` gate will fail on a correct alias-preserving
    move.** The gate blocks on incompatibilities once a `v1.*` tag exists, and
-   this class of change trips it while breaking nobody. Treat such a report as a
-   finding to be adjudicated against the identity assertions above, not as an
-   automatic no.
+   this class of change trips it while breaking nobody. The adjudication has one
+   objective criterion, and it is a condition rather than a judgement call: such
+   a report may be overruled **if and only if** `smtpclient/alias_compat_test.go`
+   contains a compile-time identity assertion for every symbol `apidiff` names,
+   and that file compiles and passes. No assertion, no overrule — a gate whose
+   exception rests on someone's reading is not a gate.
 3. `apidiff` remains authoritative for **removals, additions and genuine
    signature changes**, which is most of what it sees. This exception is narrow:
    a symbol that moved between packages under an alias.
