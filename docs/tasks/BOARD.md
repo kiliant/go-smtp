@@ -80,17 +80,22 @@ owner:
 | [T15](T15-server-design.md) | Server framework design | M5 | — | `docs/SERVER-DESIGN.md` | — (human-led) |
 | [T16](T16-bidirectional-vocabulary-audit.md) | Bidirectional vocabulary audit — **blocks v1.0** | M4 | T15 | `*.go` (root pkg), `smtpclient/{ext_b_limits,trace}.go` | client-core + api-guardian |
 | [T17](T17-server-direction-codec.md) | Server-direction codec | M6 | T15 approved | `internal/smtpwire/**`, `internal/smtpsasl/**` | wire-protocol |
-| T18 | Server core: loop, state machine, capabilities, TLS | M6 | T17, §2 approved | `smtpserver/**` | server-core |
-| T19 | Backend contract, `memory`, `backendtest` | M6 | T18 | `smtpserver/{memory,backendtest}/**` | server-core |
-| T20 | Base command set and the extension floor | M6 | T19 | `smtpserver/**` | server-core |
-| T21 | Server extensions beyond the floor, incl. `ATRN` | M6 | T20 | `smtpserver/ext_*.go` | server-core |
-| T22 | Server conformance, interop, fuzzing, security tests | M6 | T20 | `interop/servers/gosmtp/**`, `smtpserver/**/*_fuzz_test.go` | fuzz-hardening + interop-harness |
-| T23 | Server API review, docs, `smtpserver` release | M6 | T21, T22 | `smtpserver` docs, examples, release | docs-release + api-guardian |
+| [T18](T18-server-core.md) | Server core: loop, state machine, capabilities, TLS, **the §2a spool** | M6 | T17, §2 approved | `smtpserver/**` except the files T19 and T21 own by name, plus `smtpserver/go.mod` | server-core |
+| [T19](T19-backend-contract.md) | Backend contract, `memory`, `backendtest` | M6 | T18 | `smtpserver/{backend,session}.go`, `smtpserver/{memory,backendtest}/**` | server-core |
+| [T20](T20-base-commands.md) | Base command set and the extension floor | M6 | T19 | `smtpserver/cmd_*.go` and the floor-extension files | server-core |
+| [T21](T21-server-extensions.md) | Server extensions beyond the floor, incl. `ATRN` | M6 | T20 | `smtpserver/ext_*.go` | server-core |
+| [T22](T22-server-conformance.md) | Server conformance, interop, fuzzing, security tests | M6 | T20 | `interop/servers/gosmtp/**`, `smtpserver/**/*_fuzz_test.go` | fuzz-hardening + interop-harness |
+| [T23](T23-server-release.md) | Server API review, docs, `smtpserver` release | M6 | T21, T22 | `smtpserver` docs, examples, release | docs-release + api-guardian |
 
-**`docs/SERVER-DESIGN.md` is approved** (revision 4, 2026-08-04), so T18–T23
-specs may now be written against it. T15–T17 already have specs. **Implementation
-of `smtpserver/**` still waits for the v1.0 tag** — a milestone condition,
-separate from design approval, unchanged by it.
+**`docs/SERVER-DESIGN.md` is approved** (revision 4, 2026-08-04) and **every
+task now has a spec**: T18–T23 were written against it on 2026-08-12, satisfying
+`../ROADMAP.md`'s M5 exit criterion. **Implementation of `smtpserver/**` still
+waits for the v1.0 tag** — a milestone condition, separate from design approval
+and from the specs existing, unchanged by either.
+
+Three of those specs share the `smtpserver/**` tree, so the precedence rules
+above do the work: T19 owns `backend.go` and `session.go` by name and T21 owns the
+`ext_*.go` prefix, both of which beat T18's subtree claim.
 
 **T16 is the only server-scoped task with a deadline.** It is an M4 exit
 criterion because it removes client-only asymmetries from `package smtp`, and
