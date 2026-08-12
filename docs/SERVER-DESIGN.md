@@ -1826,20 +1826,20 @@ both, so consistency is a genuine, if secondary, argument.
 
 ## 10. Task breakdown
 
-Specs exist for the tasks that do **not** depend on §2, because those can be
-written honestly today. The rest get specs when §2 is approved.
+Specs exist for every task. T15–T17 were written before §2 was approved, because
+they do not depend on it; T18–T23 followed on 2026-08-12, once it was.
 
 | ID | Task | Milestone | Depends on | Spec |
 |---|---|---|---|---|
 | T15 | This document, and its approval | M5 | — | written |
 | T16 | Bidirectional vocabulary audit of `package smtp` | **M4 — blocks v1.0** | T15 | written |
 | T17 | Server-direction codec: command parsing, reply encoding, path parsing, `Received:` generation, SASL responder half | M6 | T15 | written |
-| T18 | Server core: connection loop, state machine, capability descriptors, TLS, timeouts, **the §2a spool** | M6 | T17, §2 approved | after approval |
-| T19 | Backend contract, `smtpserver/memory`, `smtpserver/backendtest` | M6 | T18 | after approval |
-| T20 | Base command set and the extension floor, server side | M6 | T19 | after approval |
-| T21 | Server extensions beyond the floor, incl. `ATRN` | M6 | T20 | after approval |
-| T22 | Conformance, interop, server-side fuzzing, stateful security tests | M6 | T20 | after approval |
-| T23 | API review, docs, examples, `smtpserver` release | M6 | T21, T22 | after approval |
+| T18 | Server core: connection loop, state machine, capability descriptors, TLS, timeouts, **the §2a spool** | M6 | T17, §2 approved | written |
+| T19 | Backend contract, `smtpserver/memory`, `smtpserver/backendtest` | M6 | T18 | written |
+| T20 | Base command set and the extension floor, server side | M6 | T19 | written |
+| T21 | Server extensions beyond the floor, incl. `ATRN` | M6 | T20 | written |
+| T22 | Conformance, interop, server-side fuzzing, stateful security tests | M6 | T20 | written |
+| T23 | API review, docs, examples, `smtpserver` release | M6 | T21, T22 | written |
 
 T16 is the only one with a deadline. T17 is the bulk of the work and does not
 wait on §2.
