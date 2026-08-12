@@ -178,6 +178,19 @@ func NewLineReader(r io.Reader) *LineReader {
 // that the peer cannot send a delayed unsolicited reply.
 func (lr *LineReader) Buffered() int { return lr.br.Buffered() }
 
+// DiscardBuffered discards and reports only bytes the LineReader has already
+// prefetched. It never reads from the underlying source. A server uses this at
+// the STARTTLS boundary to reject illegal plaintext pipelined after the command
+// without consuming any TLS handshake bytes that arrive later on the socket.
+func (lr *LineReader) DiscardBuffered() int {
+	n := lr.br.Buffered()
+	if n == 0 {
+		return 0
+	}
+	_, _ = lr.br.Discard(n)
+	return n
+}
+
 // setDeadline applies t to the underlying reader if it is deadline-capable.
 // A zero t means "no deadline" and is a no-op. Readers that are not
 // deadline-capable silently do not get a deadline — the caller chose an

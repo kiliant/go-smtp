@@ -259,6 +259,37 @@ func TestReadReplySharedBufferAcrossCalls(t *testing.T) {
 	}
 }
 
+func TestLineReaderDiscardBufferedDoesNotReadSource(t *testing.T) {
+	source := &countingReader{Reader: strings.NewReader("250 first\r\nNOOP\r\n")}
+	lr := NewLineReader(source)
+	if _, err := lr.ReadReply(time.Time{}, Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	reads := source.reads
+	if lr.Buffered() == 0 {
+		t.Fatal("test source did not produce prefetched bytes")
+	}
+	if discarded := lr.DiscardBuffered(); discarded != len("NOOP\r\n") {
+		t.Fatalf("discarded = %d, want %d", discarded, len("NOOP\r\n"))
+	}
+	if source.reads != reads {
+		t.Fatalf("DiscardBuffered performed %d source reads", source.reads-reads)
+	}
+	if lr.Buffered() != 0 {
+		t.Fatalf("Buffered = %d after discard", lr.Buffered())
+	}
+}
+
+type countingReader struct {
+	io.Reader
+	reads int
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	r.reads++
+	return r.Reader.Read(p)
+}
+
 func TestDefaultLimitsFillsZeroLimits(t *testing.T) {
 	got := Limits{}.withDefaults()
 	want := DefaultLimits()
