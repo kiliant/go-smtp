@@ -11,6 +11,11 @@ import (
 // Recipient is one RFC 5321 forward-path and its per-recipient ESMTP parameters for
 // RcptBatch. Address is supplied without angle brackets.
 //
+// Recipient stays in smtpclient rather than moving to package smtp with the
+// vocabulary types: it is a call shape for RcptBatch, not something a server's
+// receive path produces — a server sees one RCPT TO at a time
+// (docs/API-STABILITY.md §10).
+//
 // Callers constructing a Recipient literal must use keyed fields.
 type Recipient struct {
 	// Address is the RCPT TO forward-path without angle brackets.
@@ -18,7 +23,10 @@ type Recipient struct {
 	// Options carries the ESMTP parameters for this recipient. Nil means
 	// defaults, exactly as for Client.Rcpt.
 	Options *smtp.RcptOptions
-	_       struct{}
+	// Send carries this client's transmission policy for this recipient's
+	// RCPT TO command. Nil means defaults, exactly as for Client.Rcpt.
+	Send *RcptSendOptions
+	_    struct{}
 }
 
 // RcptBatchOptions configures RFC 5321/RFC 2920 RcptBatch. A nil
@@ -31,8 +39,11 @@ type RcptBatchOptions struct{ _ struct{} }
 // 5321 §4.1.1.3). to is supplied without angle brackets. A rejected recipient
 // is returned as an *smtp.Error, while recipients accepted earlier in the
 // transaction remain available for Data.
-func (c *Client) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error {
-	result, err := c.rcptBatch(ctx, []Recipient{{Address: to, Options: opts}})
+//
+// opts carries the esmtp-params to send and is shared vocabulary; send carries
+// this client's transmission policy. Both may be nil, meaning defaults.
+func (c *Client) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions, send *RcptSendOptions) error {
+	result, err := c.rcptBatch(ctx, []Recipient{{Address: to, Options: opts, Send: send}})
 	if err != nil {
 		return err
 	}
@@ -99,7 +110,7 @@ func (c *Client) rcptBatch(ctx context.Context, recipients []Recipient) (smtp.Rc
 				return nil, fmt.Errorf("smtpclient: recipient %d: %w", i, err)
 			}
 			params := append(extensionParams, recipient.Options.Extra...)
-			encoded, err := c.encodeParams(params, recipient.Options.AllowUnadvertisedParameters)
+			encoded, err := c.encodeParams(params, recipient.Send.allowUnadvertised())
 			if err != nil {
 				return nil, fmt.Errorf("smtpclient: recipient %d: %w", i, err)
 			}

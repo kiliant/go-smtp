@@ -52,9 +52,14 @@ opts := &smtp.MailOptions{
 ```
 
 The peer must advertise `FUTURE-EXT` before `Mail` writes it. Set
-`AllowUnadvertisedParameters` only when independent knowledge of the peer makes
-that local check inappropriate. Values using RFC 3461 xtext can be prepared
-with `smtp.EncodeXtext`; see `examples/extra-parameter`.
+`AllowUnadvertisedParameters` on `smtpclient.MailSendOptions` — the second,
+client-side options struct `Mail` and `Rcpt` take — only when independent
+knowledge of the peer makes that local check inappropriate. Values using RFC 3461
+xtext can be prepared with `smtp.EncodeXtext`; see `examples/extra-parameter`.
+
+That split is itself one of the shapes above: `smtp.MailOptions` is what goes on
+the wire and is shared with the server direction, so a flag that only means
+something when *sending* lives beside it rather than in it.
 
 When that RFC is implemented later, it adds a typed field. Nothing that already
 compiles stops compiling. `context.Context` is the first parameter of every

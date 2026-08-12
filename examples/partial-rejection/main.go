@@ -16,7 +16,7 @@ func main() {
 		panic(err)
 	}
 	defer c.Close()
-	if err := c.Mail(ctx, "sender@example", nil); err != nil {
+	if err := c.Mail(ctx, "sender@example", nil, nil); err != nil {
 		panic(err)
 	}
 	rcpts, err := c.RcptBatch(ctx, []smtpclient.Recipient{{Address: "accepted@example"}, {Address: "rejected@example"}}, nil)

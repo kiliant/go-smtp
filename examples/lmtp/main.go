@@ -20,7 +20,7 @@ func main() {
 		panic(err)
 	}
 	defer c.Close()
-	if err := c.Mail(ctx, "sender@example", nil); err != nil {
+	if err := c.Mail(ctx, "sender@example", nil, nil); err != nil {
 		panic(err)
 	}
 	if _, err := c.RcptBatch(ctx, []smtpclient.Recipient{{Address: "one@example"}, {Address: "two@example"}}, nil); err != nil {

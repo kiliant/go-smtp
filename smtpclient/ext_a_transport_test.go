@@ -25,7 +25,7 @@ func TestTransportMailParametersAndSizePreflight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Size: &size, Body: smtp.BodyType8BitMIME, SMTPUTF8: true}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Size: &size, Body: smtp.BodyType8BitMIME, SMTPUTF8: true}}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -40,7 +40,7 @@ func TestTransportSizeOverServerMaximumDoesNotWriteMail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Size: &size}})
+	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Size: &size}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "exceeds server maximum") {
 		t.Fatalf("Mail error = %v, want local SIZE maximum error", err)
 	}
@@ -57,10 +57,10 @@ func TestBinaryMIMERejectsDataBeforeWriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Body: smtp.BodyTypeBinaryMIME}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Body: smtp.BodyTypeBinaryMIME}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "to@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "to@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Data(context.Background(), strings.NewReader("body"), nil); err == nil || !strings.Contains(err.Error(), "requires CHUNKING") {
@@ -92,7 +92,7 @@ func TestBinaryMIMEStateDoesNotPinAbandonedConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Body: smtp.BodyTypeBinaryMIME}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{Body: smtp.BodyTypeBinaryMIME}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !binaryMailFor(c) {
@@ -188,10 +188,10 @@ func TestBDATOpaqueChunksAndZeroLengthTerminator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "to@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "to@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	result, err := c.Data(context.Background(), strings.NewReader(".x\r\n"), &DataOptions{UseChunking: true, ChunkSize: 4})

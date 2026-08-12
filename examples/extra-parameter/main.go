@@ -19,7 +19,7 @@ func main() {
 		panic("server does not advertise FUTURE-EXT")
 	}
 	opts := &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "FUTURE-EXT", Value: smtp.EncodeXtext("job+42")}}}
-	if err := c.Mail(ctx, "sender@example", opts); err != nil {
+	if err := c.Mail(ctx, "sender@example", opts, nil); err != nil {
 		panic(err)
 	}
 }

@@ -1,79 +1,34 @@
 package smtpclient
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
-
 	smtp "github.com/kiliant/go-smtp"
 )
 
-// Limits is the registered subset of RFC 9422 server limits. Unknown limits
-// remain available through Extension, so later IANA registrations do not need
-// an API change before callers can observe them.
-//
-// Callers constructing a Limits literal must use keyed fields.
-type Limits struct {
-	// MailMax is the RFC 9422 MAILMAX transaction limit.
-	MailMax uint32
-	// RcptMax is the RFC 9422 RCPTMAX recipient limit.
-	RcptMax uint32
-	// RcptDomainMax is the RFC 9422 RCPTDOMAINMAX recipient-domain limit.
-	RcptDomainMax uint32
-	_             struct{}
-}
+// Limits is the registered subset of RFC 9422 server limits. It is an alias for
+// smtp.Limits, which is where the type lives: LIMITS is an advertisement a
+// server produces and a client parses, so it is shared vocabulary rather than
+// client vocabulary (docs/API-STABILITY.md §10). The alias preserves type
+// identity, so existing callers and keyed struct literals are unaffected.
+type Limits = smtp.Limits
 
-// ParseLimitsParam parses the raw parameters from a LIMITS EHLO keyword. A
-// malformed parameter list is rejected; malformed individual registered limits
-// are ignored as RFC 9422 §3.7 requires.
-func ParseLimitsParam(params string) (Limits, error) {
-	var result Limits
-	if params == "" {
-		return result, nil
-	}
-	for _, field := range strings.Fields(params) {
-		name, value, ok := strings.Cut(field, "=")
-		if !ok || name == "" || value == "" || strings.Contains(value, "=") {
-			return Limits{}, fmt.Errorf("smtpclient: invalid LIMITS parameter %q", field)
-		}
-		n := parseLimit(value)
-		switch strings.ToUpper(name) {
-		case "MAILMAX":
-			if n != 0 {
-				result.MailMax = n
-			}
-		case "RCPTMAX":
-			if n != 0 {
-				result.RcptMax = n
-			}
-		case "RCPTDOMAINMAX":
-			if n != 0 {
-				result.RcptDomainMax = n
-			}
-		}
-	}
-	return result, nil
-}
-
-func parseLimit(s string) uint32 {
-	if len(s) == 0 || len(s) > 6 || s[0] == '0' {
-		return 0
-	}
-	n, err := strconv.ParseUint(s, 10, 32)
-	if err != nil || n == 0 {
-		return 0
-	}
-	return uint32(n)
+// ParseLimitsParam parses the raw parameters from a LIMITS EHLO keyword (RFC
+// 9422 §3). It forwards to smtp.ParseLimitsParam; see Limits for why the
+// implementation moved.
+func ParseLimitsParam(params string) (smtp.Limits, error) {
+	return smtp.ParseLimitsParam(params)
 }
 
 // Limits reports the current RFC 9422 limits advertised by the server. It
 // returns false if LIMITS was not advertised. A malformed advertisement is
 // returned as an error instead of being silently interpreted as a limit.
-func (c *Client) Limits() (Limits, bool, error) {
+//
+// This accessor stays on Client: it reads negotiated session state, which is
+// client-side by nature even though the type it returns is not.
+func (c *Client) Limits() (smtp.Limits, bool, error) {
 	params, ok := c.Extension(smtp.ExtLimits)
 	if !ok {
-		return Limits{}, false, nil
+		return smtp.Limits{}, false, nil
 	}
-	limits, err := ParseLimitsParam(params)
+	limits, err := smtp.ParseLimitsParam(params)
 	return limits, true, err
 }

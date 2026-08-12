@@ -23,13 +23,13 @@ func TestTransactionDataReturnsPerRecipientResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "one@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "one@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "two@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "two@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.Data(context.Background(), strings.NewReader(""), nil)
@@ -62,7 +62,7 @@ func TestRcptBatchUsesAdvertisedPipelining(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	result, err := c.RcptBatch(context.Background(), []Recipient{
@@ -99,7 +99,7 @@ func TestRcptBatchUsesSameDepthOneQueueWithoutAdvertisement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	result, err := c.RcptBatch(context.Background(), []Recipient{
@@ -127,10 +127,10 @@ func TestDataRejectionLeavesTransactionRecoverable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "one@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "one@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Data(context.Background(), strings.NewReader("body"), nil); err == nil {
@@ -154,10 +154,10 @@ func TestDataRequires250FinalReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "one@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "one@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Data(context.Background(), strings.NewReader(""), nil); err == nil {
@@ -184,7 +184,7 @@ func TestMailExtraValidatesAdvertisedExtensionBeforeWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "SIZE", Value: "1"}}})
+	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "SIZE", Value: "1"}}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "SIZE") {
 		t.Fatalf("Mail error = %v, want missing SIZE extension", err)
 	}
@@ -200,7 +200,7 @@ func TestMailExtraUsesAdvertisingExtension(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "RET", Value: "FULL"}}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "RET", Value: "FULL"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -221,10 +221,10 @@ func TestRcptUTF8PathRequiresTransactionSMTPUTF8(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	err = c.Rcpt(context.Background(), "récipient@example.test", nil)
+	err = c.Rcpt(context.Background(), "récipient@example.test", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "SMTPUTF8") {
 		t.Fatalf("Rcpt error = %v, want local SMTPUTF8 coupling error", err)
 	}
@@ -244,10 +244,10 @@ func TestRcptUTF8PathAllowedWhenTransactionRequestsSMTPUTF8(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{SMTPUTF8: true}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{SMTPUTF8: true}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "récipient@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "récipient@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -268,16 +268,16 @@ func TestRcptUTF8CouplingResetByRSET(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{SMTPUTF8: true}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Transport: &smtp.TransportOptions{SMTPUTF8: true}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Reset(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	err = c.Rcpt(context.Background(), "récipient@example.test", nil)
+	err = c.Rcpt(context.Background(), "récipient@example.test", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "SMTPUTF8") {
 		t.Fatalf("Rcpt error after RSET = %v, want local SMTPUTF8 coupling error", err)
 	}

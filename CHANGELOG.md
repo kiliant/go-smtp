@@ -36,13 +36,33 @@ user-visible outcomes rather than repeating commit messages.
 
 ### Changed
 
+- **Breaking exported API change (pre-v1):** moved
+  `AllowUnadvertisedParameters` off `smtp.MailOptions` and `smtp.RcptOptions`
+  into new client-side `smtpclient.MailSendOptions` and
+  `smtpclient.RcptSendOptions` structs, and added them as a second options
+  parameter to `Client.Mail` and `Client.Rcpt` (`Recipient` gains a matching
+  `Send` field for `RcptBatch`). `smtp.MailOptions` and `smtp.RcptOptions` are
+  direction-neutral vocabulary that a server's receive-side parser also
+  produces, and "permit a parameter the server did not advertise" is meaningless
+  in that direction. Existing calls add a `nil` argument; existing uses of the
+  flag move to the new struct. See `docs/API-STABILITY.md` §10.
+- **Exported API:** moved `Limits` and `ParseLimitsParam` (RFC 9422) and
+  `TraceEvent`/`TraceDirection` from `smtpclient` to `package smtp`, leaving type
+  and constant aliases behind. Type identity is preserved, so this is source- and
+  binary-compatible; `LIMITS` is a server-produced advertisement and a trace
+  shape is not direction-specific, so neither belonged in a client-only package.
+  `Client.Limits()` is unchanged.
 - **Breaking exported API change (pre-v1):** changed `Client.BURL` from returning
   only `error` to returning `(smtp.DataResult, error)`. BURL with `LAST` is a
   content-completion command and must preserve the same per-recipient result
   shape as DATA and future content transports.
-- **Exported API:** placed RRVS on recipient options, matching RFC 7293. The
-  earlier sender-level field remains source-compatible but is rejected with an
-  actionable error.
+- **Breaking exported API change (pre-v1):** placed RRVS on recipient options,
+  matching RFC 7293, and removed `smtp.DeliveryOptions.RRVS`. The sender-level
+  field was retained as a source-compatibility shim that always failed at run
+  time; because `smtp.DeliveryOptions` is direction-neutral, it was also a field
+  a server's parser could never fill. Setting it is now a compile error naming
+  `RecipientDeliveryOptions.RRVS` instead of a runtime error saying the same
+  thing. See `docs/API-STABILITY.md` §10.
 - Normalized DATA line endings to CRLF and reject bare-LF terminators; BDAT
   remains byte-exact.
 - REQUIRETLS now requires an established TLS session before its MAIL parameter

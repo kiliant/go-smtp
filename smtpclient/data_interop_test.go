@@ -189,7 +189,7 @@ func sendFixture(ctx context.Context, client *smtpclient.Client, fixture harness
 	} else if fixture.Name == "smtp-utf8-recipient" {
 		mailOptions = &smtp.MailOptions{Transport: &smtp.TransportOptions{SMTPUTF8: true}}
 	}
-	if err := client.Mail(ctx, "sender@example.test", mailOptions); err != nil {
+	if err := client.Mail(ctx, "sender@example.test", mailOptions, nil); err != nil {
 		return err
 	}
 	recipientBatch := []smtpclient.Recipient{

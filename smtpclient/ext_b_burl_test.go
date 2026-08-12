@@ -23,11 +23,11 @@ func TestBURLLastReturnsResultForEveryAcceptedRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, recipient := range []string{"one@example.test", "two@example.test"} {
-		if err := c.Rcpt(context.Background(), recipient, nil); err != nil {
+		if err := c.Rcpt(context.Background(), recipient, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -62,10 +62,10 @@ func TestBURLWithoutLastReturnsEmptyResultAndKeepsTransactionOpen(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "recipient@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "recipient@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.BURL(context.Background(), "imap://example.test/inbox/;uid=1", &BURLOptions{Last: false})
@@ -97,10 +97,10 @@ func TestBURLLastFailureUsesBURLCommandAndEndsTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "recipient@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "recipient@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.BURL(context.Background(), "imap://example.test/inbox/;uid=1", nil)

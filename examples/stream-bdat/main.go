@@ -20,10 +20,10 @@ func main() {
 		panic(err)
 	}
 	defer c.Close()
-	if err := c.Mail(ctx, "sender@example", nil); err != nil {
+	if err := c.Mail(ctx, "sender@example", nil, nil); err != nil {
 		panic(err)
 	}
-	if err := c.Rcpt(ctx, "recipient@example", nil); err != nil {
+	if err := c.Rcpt(ctx, "recipient@example", nil, nil); err != nil {
 		panic(err)
 	}
 	_, err = c.Data(ctx, message, &smtpclient.DataOptions{UseChunking: true, ChunkSize: 64 << 10})

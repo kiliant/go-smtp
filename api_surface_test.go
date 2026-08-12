@@ -243,6 +243,54 @@ func TestAPISurfaceGrowingSets(t *testing.T) {
 	}
 }
 
+// TestAPISurfaceNoSenderLevelRRVS pins T16's fourth finding
+// (API-STABILITY.md §10). RFC 7293 defines RRVS= on RCPT TO only, so a
+// sender-level field could be set only to receive an error when sending and
+// could never be filled when receiving. It was removed before the freeze; after
+// the freeze reintroducing it would be additive and therefore permitted, which
+// is exactly why the prohibition needs a gate rather than a doc comment.
+func TestAPISurfaceNoSenderLevelRRVS(t *testing.T) {
+	_, files, ok := loadPackageDir(t, ".")
+	if !ok {
+		t.Fatal("could not parse root package smtp")
+	}
+	if structHasNamedField(files, "DeliveryOptions", "RRVS") {
+		t.Error("DeliveryOptions must not carry RRVS: RFC 7293 scopes it to RCPT TO, and a sender-level field is meaningless in the receive direction (API-STABILITY.md §10)")
+	}
+	if !structHasNamedField(files, "RecipientDeliveryOptions", "RRVS") {
+		t.Error("RecipientDeliveryOptions must carry RRVS (RFC 7293)")
+	}
+}
+
+// TestAPISurfaceDirectionNeutralVocabulary pins the relocations T16 made
+// (API-STABILITY.md §10): the RFC 9422 LIMITS types and the RFC 5321 trace
+// shapes belong to package smtp, because a server produces both. The mechanical
+// half of the rule is checkable here; the alias identity that keeps the move
+// source-compatible is checked by smtpclient/alias_compat_test.go, which is
+// where the types can be compared.
+func TestAPISurfaceDirectionNeutralVocabulary(t *testing.T) {
+	_, files, ok := loadPackageDir(t, ".")
+	if !ok {
+		t.Fatal("could not parse root package smtp")
+	}
+	for _, name := range []string{"Limits", "TraceEvent"} {
+		if !typeDeclared(files, name) {
+			t.Errorf("package smtp must declare %s: it is direction-neutral vocabulary a server produces (API-STABILITY.md §10)", name)
+		}
+	}
+	if !typeDeclared(files, "TraceDirection") {
+		t.Error("package smtp must declare TraceDirection (API-STABILITY.md §10)")
+	}
+	// The removal half of §10: a direction-specific validation flag must not
+	// reappear on a shared vocabulary type. It lives on
+	// smtpclient.MailSendOptions / RcptSendOptions instead.
+	for _, name := range []string{"MailOptions", "RcptOptions"} {
+		if structHasNamedField(files, name, "AllowUnadvertisedParameters") {
+			t.Errorf("%s must not carry AllowUnadvertisedParameters: it is client-side policy, meaningless to a server's parser (API-STABILITY.md §10)", name)
+		}
+	}
+}
+
 // TestAPISurfaceContentResults enforces API-STABILITY.md §8 for every public
 // message-content command. SMTP, LMTP DATA, and BURL all need the same
 // per-recipient result shape.
@@ -883,6 +931,24 @@ func namedTypeIsIdent(files map[string]*ast.File, name, underlying string) bool 
 				}
 				id, ok := ts.Type.(*ast.Ident)
 				return ok && id.Name == underlying
+			}
+		}
+	}
+	return false
+}
+
+// typeDeclared reports whether files declare an exported type of this name.
+func typeDeclared(files map[string]*ast.File, name string) bool {
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == name {
+					return true
+				}
 			}
 		}
 	}

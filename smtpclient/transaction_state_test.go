@@ -27,7 +27,7 @@ func TestRcptBeforeMailRejected(t *testing.T) {
 	}
 	// The fake server scripts no RCPT: if the client wrote one, the script
 	// mismatch fails the test in addition to the assertion below.
-	err = c.Rcpt(context.Background(), "rcpt@example.test", nil)
+	err = c.Rcpt(context.Background(), "rcpt@example.test", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "RCPT") {
 		t.Fatalf("Rcpt before Mail = %v, want a local state error naming RCPT", err)
 	}
@@ -45,7 +45,7 @@ func TestDataBeforeRcptRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, err = c.Data(context.Background(), strings.NewReader("body\r\n"), nil)
@@ -91,9 +91,9 @@ func TestMailAllowUnadvertisedParametersBypassesValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{
-		Extra:                       []smtp.Param{{Keyword: "SIZE", Value: "1"}},
-		AllowUnadvertisedParameters: true,
-	})
+		Extra: []smtp.Param{{Keyword: "SIZE", Value: "1"}},
+	}, &MailSendOptions{AllowUnadvertisedParameters: true})
+
 	if err != nil {
 		t.Fatalf("Mail with AllowUnadvertisedParameters = %v, want the parameter sent unvalidated", err)
 	}
@@ -114,13 +114,13 @@ func TestRcptAllowUnadvertisedParametersBypassesValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	err = c.Rcpt(context.Background(), "rcpt@example.test", &smtp.RcptOptions{
-		Extra:                       []smtp.Param{{Keyword: "NOTIFY", Value: "NEVER"}},
-		AllowUnadvertisedParameters: true,
-	})
+		Extra: []smtp.Param{{Keyword: "NOTIFY", Value: "NEVER"}},
+	}, &RcptSendOptions{AllowUnadvertisedParameters: true})
+
 	if err != nil {
 		t.Fatalf("Rcpt with AllowUnadvertisedParameters = %v, want the parameter sent unvalidated", err)
 	}
@@ -140,12 +140,13 @@ func TestRcptRejectsUnadvertisedParameterByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	err = c.Rcpt(context.Background(), "rcpt@example.test", &smtp.RcptOptions{
 		Extra: []smtp.Param{{Keyword: "NOTIFY", Value: "NEVER"}},
-	})
+	}, nil)
+
 	if err == nil || !strings.Contains(err.Error(), "DSN") {
 		t.Fatalf("Rcpt error = %v, want a local error naming the unadvertised DSN extension", err)
 	}

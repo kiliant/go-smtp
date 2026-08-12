@@ -4,45 +4,35 @@ import (
 	"strconv"
 	"strings"
 
+	smtp "github.com/kiliant/go-smtp"
 	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
-// TraceDirection reports which side of the RFC 5321 conversation produced a traced
-// line.
-//
-// It is a string type rather than an enumeration for the reason given in
-// docs/API-STABILITY.md §1: a caller must be able to switch on the two
-// directions that exist today without the type becoming closed to a third.
-// Callers must therefore treat an unrecognised direction as "something else
-// happened", not as impossible.
-type TraceDirection string
+// TraceDirection reports which side of the RFC 5321 conversation produced a
+// traced line. It is an alias for smtp.TraceDirection: an observability shape
+// is not direction-specific vocabulary, and two incompatible direction types in
+// one process — one from this package, one from a server — would be a tax on
+// anyone running both halves (docs/API-STABILITY.md §10). The alias preserves
+// type identity, so existing callers are unaffected.
+type TraceDirection = smtp.TraceDirection
 
+// The RFC 5321 trace directions, aliased from package smtp for the reason given
+// on TraceDirection. Aliasing constants preserves both type and value identity.
 const (
 	// TraceSent marks an RFC 5321 line this client wrote to the server.
-	TraceSent TraceDirection = "sent"
+	TraceSent = smtp.TraceSent
 	// TraceReceived marks an RFC 5321 line this client read from the server.
-	TraceReceived TraceDirection = "received"
+	TraceReceived = smtp.TraceReceived
 )
 
-// TraceEvent is one RFC 5321 protocol line exchanged with the server, as handed to
-// ClientOptions.Trace.
+// TraceEvent is one RFC 5321 protocol line exchanged with the server, as handed
+// to ClientOptions.Trace. It is an alias for smtp.TraceEvent; see
+// TraceDirection for why the type lives there.
 //
 // Line never carries a trailing CRLF. A reply keeps its three-digit code and,
 // when multiline, carries every line joined by "\n" behind that single code —
 // the shape smtp.Error's Text uses, with the code restored.
-//
-// Callers receive TraceEvent rather than build it, but a test may construct
-// one: do so with keyed fields. The trailing unexported field makes an
-// unkeyed literal a compile error, so a future field can be added without
-// breaking callers. See docs/API-STABILITY.md §7.
-type TraceEvent struct {
-	// Direction reports whether the line was sent or received.
-	Direction TraceDirection
-	// Line is the protocol line, with SASL payloads already redacted.
-	Line string
-
-	_ struct{}
-}
+type TraceEvent = smtp.TraceEvent
 
 // redactedPayload replaces every SASL payload in a trace. It is a fixed
 // string rather than a length-preserving mask because the length of a

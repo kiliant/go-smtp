@@ -29,11 +29,11 @@ func TestLMTPUsesLHLOAndReturnsPerRecipientReplies(t *testing.T) {
 	if params, ok := c.Extension(smtp.ExtPipelining); !ok || params != "" {
 		t.Fatalf("PIPELINING = (%q, %v), want (empty, true)", params, ok)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, recipient := range []string{"one@example.test", "two@example.test"} {
-		if err := c.Rcpt(context.Background(), recipient, nil); err != nil {
+		if err := c.Rcpt(context.Background(), recipient, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -102,16 +102,16 @@ func TestLMTPDataIncludesOnlyRecipientsAcceptedByRCPT(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "one@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "one@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "rejected@example.test", nil); err == nil {
+	if err := c.Rcpt(context.Background(), "rejected@example.test", nil, nil); err == nil {
 		t.Fatal("rejected RCPT succeeded")
 	}
-	if err := c.Rcpt(context.Background(), "three@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "three@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.Data(context.Background(), strings.NewReader(""), nil)
@@ -160,10 +160,10 @@ func TestLMTPExtraFinalReplyPoisonsConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "one@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "one@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Data(context.Background(), strings.NewReader(""), nil); err == nil {
@@ -188,7 +188,7 @@ func TestLMTPZeroRecipientsHasNoFinalReplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.Data(context.Background(), strings.NewReader(""), nil)
@@ -229,11 +229,11 @@ func newLMTPTransactionClient(t *testing.T, raw net.Conn) *Client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, recipient := range []string{"one@example.test", "two@example.test"} {
-		if err := c.Rcpt(context.Background(), recipient, nil); err != nil {
+		if err := c.Rcpt(context.Background(), recipient, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

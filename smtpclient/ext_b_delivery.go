@@ -52,9 +52,9 @@ func (c *Client) deliveryMailParams(path string, opts *smtp.MailOptions) ([]smtp
 		}
 		params = append(params, p)
 	}
-	if d.RRVS != nil {
-		return nil, errors.New("smtpclient: RRVS (RFC 7293) is a RCPT-scoped parameter and is not valid on MAIL FROM; set it on RcptOptions.Delivery.RRVS instead")
-	}
+	// RRVS needs no rejection here: T16 removed the sender-level field, so
+	// RFC 7293's RCPT-only scope is now a compile-time property of
+	// smtp.DeliveryOptions rather than a runtime error.
 	if d.RequireTLS {
 		// RFC 8689 §2: REQUIRETLS "MUST only be specified in the context of
 		// an SMTP session meeting the security requirements of REQUIRETLS",

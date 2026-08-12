@@ -200,10 +200,10 @@ func TestTraceOmitsMessageContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "rcpt@example.test", nil); err != nil {
+	if err := c.Rcpt(context.Background(), "rcpt@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Data(context.Background(), strings.NewReader(body+"\r\n"), nil); err != nil {

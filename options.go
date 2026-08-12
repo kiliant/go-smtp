@@ -7,6 +7,12 @@ package smtp
 // docs/API-STABILITY.md §3. That is what allows a future extension RFC to add
 // a field here without breaking callers.
 //
+// MailOptions is direction-neutral: it is what a client sends and what a
+// server's parser produces from a received MAIL FROM. Every field must
+// therefore be meaningful in both directions, which is why the send-side
+// validation opt-out is smtpclient.MailSendOptions and not a field here — see
+// docs/API-STABILITY.md §10.
+//
 // The struct is deliberately near-empty today. Typed fields for the modelled
 // parameters are added by the extension tasks — SIZE= and BODY= (T08), the DSN
 // parameters RET= and ENVID=, plus BY=, HOLDFOR=/HOLDUNTIL=, MT-PRIORITY=,
@@ -36,19 +42,14 @@ type MailOptions struct {
 	// a caller who needs a parameter that has not been implemented yet must
 	// still be able to send it rather than abandon the library.
 	//
-	// Parameters are written in slice order, after any typed fields. The
-	// client validates each keyword against the extensions the server
-	// advertised before writing, unless the caller opts out — a local error
-	// naming the missing extension is a better diagnostic than a 501 from a
-	// strict server.
+	// Parameters are written in slice order, after any typed fields. When
+	// sending, the client validates each keyword against the extensions the
+	// server advertised before writing, unless the caller opts out through
+	// smtpclient.MailSendOptions — a local error naming the missing extension
+	// is a better diagnostic than a 501 from a strict server. When receiving,
+	// Extra carries the parameters the parser did not recognise, preserved
+	// verbatim per docs/API-STABILITY.md §1b.
 	Extra []Param
-	// AllowUnadvertisedParameters permits Extra parameters, and the AUTH=
-	// parameter when set, even when the server did not advertise their
-	// extension keyword. It defaults to false so the client reports a local,
-	// actionable validation error before writing a command that a strict
-	// server would reject. Enable it only when the caller has independent
-	// knowledge that the peer accepts the parameter.
-	AllowUnadvertisedParameters bool
 
 	_ struct{}
 }
@@ -57,7 +58,9 @@ type MailOptions struct {
 // §4.1.1.3).
 //
 // A nil *RcptOptions is always valid and means defaults, per
-// docs/API-STABILITY.md §3.
+// docs/API-STABILITY.md §3. Like MailOptions it is direction-neutral — sent by
+// a client, produced by a server's parser — so its send-side validation opt-out
+// lives in smtpclient.RcptSendOptions instead of here.
 //
 // As with MailOptions, the struct is near-empty today: the DSN parameters
 // NOTIFY= and ORCPT= (RFC 3461) are added by T09, additively.
@@ -71,12 +74,9 @@ type RcptOptions struct {
 	// A nil value leaves them unused.
 	Legacy *RecipientLegacyOptions
 	// Extra carries esmtp-params this library does not model with a typed
-	// field. See MailOptions.Extra.
+	// field. See MailOptions.Extra; the send-side opt-out for this command is
+	// smtpclient.RcptSendOptions.
 	Extra []Param
-	// AllowUnadvertisedParameters permits Extra parameters even when the
-	// server did not advertise their extension keyword. It has the same
-	// default and purpose as MailOptions.AllowUnadvertisedParameters.
-	AllowUnadvertisedParameters bool
 
 	_ struct{}
 }
@@ -102,6 +102,12 @@ type TransportOptions struct {
 // 3461, RFC 2852, RFC 4865, RFC 6710, RFC 7293, and RFC 8689.
 // A nil *DeliveryOptions means defaults and leaves these extensions unused.
 //
+// There is deliberately no RRVS field here: RFC 7293 defines RRVS= on RCPT TO,
+// so a sender-level field could only ever produce an error when sent and could
+// never be filled by a receive-side parser. Use RecipientDeliveryOptions.RRVS.
+// It existed as a source-compatibility shim until T16 removed it —
+// docs/API-STABILITY.md §10.
+//
 // Callers constructing a DeliveryOptions literal must use keyed fields.
 type DeliveryOptions struct {
 	// DSN configures RFC 3461 MAIL FROM parameters.
@@ -112,10 +118,6 @@ type DeliveryOptions struct {
 	FutureRelease *FutureReleaseOptions
 	// MTPriority is the RFC 6710 MT-PRIORITY= value; zero omits it.
 	MTPriority MTPriority
-	// RRVS is invalid here: RFC 7293 defines RRVS= on RCPT TO. It is
-	// retained for source compatibility; Client.Mail returns an actionable
-	// error when it is set. Use RecipientDeliveryOptions.RRVS instead.
-	RRVS *RRVSOptions
 	// RequireTLS requests RFC 8689 REQUIRETLS. It asks every hop from here to
 	// final delivery — not merely the connection to the immediate peer — to
 	// relay the message only over TLS, tagged with REQUIRETLS in turn, or

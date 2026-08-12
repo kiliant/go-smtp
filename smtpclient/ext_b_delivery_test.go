@@ -19,10 +19,10 @@ func TestDSNParametersAreXtextEncoded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturnFull, EnvelopeID: "queue+id=1"}}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturnFull, EnvelopeID: "queue+id=1"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	err = c.Rcpt(context.Background(), "recipient@example.test", &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotifyFailure, smtp.DSNNotifyDelay}, OriginalType: "utf-8", Original: "someone+tag@example.test"}}})
+	err = c.Rcpt(context.Background(), "recipient@example.test", &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotifyFailure, smtp.DSNNotifyDelay}, OriginalType: "utf-8", Original: "someone+tag@example.test"}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestDeliveryRejectsMissingExtensionBeforeWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturnFull}}})
+	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturnFull}}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "DSN") {
 		t.Fatalf("Mail = %v, want missing DSN error", err)
 	}
@@ -58,18 +58,14 @@ func TestRRVSIsRecipientParameter(t *testing.T) {
 	}
 }
 
-func TestRRVSOnMailRejectedWithActionableMessage(t *testing.T) {
-	raw, done := startFakeServer(t, []fakeStep{{command: "EHLO client.test", replies: fakeReplies("250 fake.test\r\n")}}, nil)
-	defer done()
-	c, err := NewClient(context.Background(), raw, &ClientOptions{Identity: "client.test"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{RRVS: &smtp.RRVSOptions{Timestamp: "2014-04-03T23:01:00Z"}}})
-	if err == nil || !strings.Contains(err.Error(), "RCPT-scoped") || strings.Contains(err.Error(), "needs an RRVS field") {
-		t.Fatalf("Mail error = %v, want a message describing RRVS as RCPT-scoped, not the stale \"needs an RRVS field\" message", err)
-	}
-}
+// TestRRVSOnMailRejectedWithActionableMessage is gone deliberately: T16 removed
+// smtp.DeliveryOptions.RRVS, so RFC 7293's RCPT-only scope is now enforced by
+// the type system instead of by a runtime error, and there is no longer a way to
+// express the mistake this test made. A field a caller can only ever set to
+// receive an error was also a field a server's receive-side parser could never
+// fill — see docs/API-STABILITY.md §10. The replacement gate is
+// TestAPISurfaceNoSenderLevelRRVS in the root package, which fails if the field
+// is ever reintroduced; the RCPT-scoped positive path is covered above.
 
 // TestDeliverByRequiresModeBeforeWrite covers the audit finding that BY=
 // was emitted without its mandatory by-mode (RFC 2852 §4: by-value =
@@ -85,7 +81,7 @@ func TestDeliverByRequiresModeBeforeWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 30}}})
+	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 30}}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Mode") {
 		t.Fatalf("Mail error = %v, want DELIVERBY Mode-required error", err)
 	}
@@ -104,7 +100,7 @@ func TestDeliverByModeNAllowsZeroAndNegativeSeconds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 0, Mode: "N"}}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 0, Mode: "N"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -119,7 +115,7 @@ func TestDeliverByModeNAllowsNegativeSeconds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: -30, Mode: "N"}}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: -30, Mode: "N"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -136,7 +132,7 @@ func TestDeliverByModeRRejectsNonPositiveSeconds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 0, Mode: "R"}}})
+	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 0, Mode: "R"}}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "1..999999999") {
 		t.Fatalf("Mail error = %v, want DELIVERBY mode R bounds error", err)
 	}
@@ -155,7 +151,7 @@ func TestDSNReturnAcceptsUnmodelledValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturn("x-future-value")}}}); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturn("x-future-value")}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -173,10 +169,10 @@ func TestDSNNotifyAcceptsUnmodelledValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	err = c.Rcpt(context.Background(), "recipient@example.test", &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotify("x-future-value")}}}})
+	err = c.Rcpt(context.Background(), "recipient@example.test", &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotify("x-future-value")}}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

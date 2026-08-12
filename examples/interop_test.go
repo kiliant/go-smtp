@@ -101,7 +101,7 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 	}
 	t.Log("SKIP implicit-tls: current harness profiles expose no smtps endpoint")
 
-	if err := c.Mail(ctx, "interop@example.test", nil); err != nil {
+	if err := c.Mail(ctx, "interop@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	recipients := []smtpclient.Recipient{{Address: "interop@example.test"}, {Address: "interop@example.test"}}
@@ -131,10 +131,10 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 	}
 
 	if _, ok := c.Extension(smtp.ExtDSN); ok {
-		if err := c.Mail(ctx, "interop@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturnHeaders, EnvelopeID: "examples-42"}}}); err != nil {
+		if err := c.Mail(ctx, "interop@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturnHeaders, EnvelopeID: "examples-42"}}}, nil); err != nil {
 			t.Fatalf("DSN MAIL: %v", err)
 		}
-		if err := c.Rcpt(ctx, "interop@example.test", &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotifyFailure}}}}); err != nil {
+		if err := c.Rcpt(ctx, "interop@example.test", &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotifyFailure}}}}, nil); err != nil {
 			t.Fatalf("DSN RCPT: %v", err)
 		}
 		if _, err := c.Data(ctx, syntheticMessage('\n', 1024), nil); err != nil {
@@ -143,10 +143,10 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 
 		// RET= is deliberately sent through Extra, despite having a typed
 		// field, to exercise the unmodelled-parameter transport path.
-		if err := c.Mail(ctx, "interop@example.test", &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "RET", Value: "HDRS"}}}); err != nil {
+		if err := c.Mail(ctx, "interop@example.test", &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "RET", Value: "HDRS"}}}, nil); err != nil {
 			t.Fatalf("Extra MAIL: %v", err)
 		}
-		if err := c.Rcpt(ctx, "interop@example.test", nil); err != nil {
+		if err := c.Rcpt(ctx, "interop@example.test", nil, nil); err != nil {
 			t.Fatalf("Extra RCPT: %v", err)
 		}
 		if _, err := c.Data(ctx, syntheticMessage('\n', 1024), nil); err != nil {
@@ -160,10 +160,10 @@ func runExampleProfile(t *testing.T, cfg harness.Config, profile harness.Profile
 		t.Log("SKIP stream-bdat: CHUNKING not advertised")
 		return
 	}
-	if err := c.Mail(ctx, "interop@example.test", nil); err != nil {
+	if err := c.Mail(ctx, "interop@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(ctx, "interop@example.test", nil); err != nil {
+	if err := c.Rcpt(ctx, "interop@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Data(ctx, syntheticMessage('b', 1<<20), &smtpclient.DataOptions{UseChunking: true, ChunkSize: 64 << 10}); err != nil {

@@ -150,7 +150,7 @@ func TestLMTPPerRecipientDataRepliesInterop(t *testing.T) {
 	commandCtx, commandCancel := context.WithTimeout(ctx, maxDuration(cfg.CommandTimeout, 30*time.Second))
 	defer commandCancel()
 
-	if err := client.Mail(commandCtx, "sender@example.test", nil); err != nil {
+	if err := client.Mail(commandCtx, "sender@example.test", nil, nil); err != nil {
 		t.Fatalf("MAIL FROM: %v", err)
 	}
 

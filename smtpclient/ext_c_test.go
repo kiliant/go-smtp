@@ -97,16 +97,16 @@ func TestLegacyMailAndRcptParameters(t *testing.T) {
 	}
 	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Legacy: &smtp.LegacyOptions{
 		Solicit: "org.example:ADV", TransitID: "abc123", Submitter: "alice@example.test", ConPerm: true,
-	}}); err != nil {
+	}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rcpt(context.Background(), "recipient@example.test", &smtp.RcptOptions{Legacy: &smtp.RecipientLegacyOptions{ConNeg: true}}); err != nil {
+	if err := c.Rcpt(context.Background(), "recipient@example.test", &smtp.RcptOptions{Legacy: &smtp.RecipientLegacyOptions{ConNeg: true}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Reset(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "second@example.test", nil); err != nil {
+	if err := c.Mail(context.Background(), "second@example.test", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -120,10 +120,10 @@ func TestLegacyLocalValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Legacy: &smtp.LegacyOptions{Solicit: "bad value"}}); err == nil {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Legacy: &smtp.LegacyOptions{Solicit: "bad value"}}, nil); err == nil {
 		t.Fatal("invalid SOLICIT was sent")
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Legacy: &smtp.LegacyOptions{ConPerm: true}}); err == nil || !strings.Contains(err.Error(), "CONPERM") {
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Legacy: &smtp.LegacyOptions{ConPerm: true}}, nil); err == nil || !strings.Contains(err.Error(), "CONPERM") {
 		t.Fatalf("missing CONPERM error = %v", err)
 	}
 }

@@ -76,6 +76,34 @@ The client must reject a parameter whose extension the server did not advertise
 **locally**, before writing, rather than letting the server reply `501`. That
 check applies to `Extra` too, unless the caller opts out.
 
+**The opt-out is not a field on the options struct.** It is
+`smtpclient.MailSendOptions` / `RcptSendOptions`, for the reason §10 gives:
+`MailOptions` and `RcptOptions` are direction-neutral, and "permit a parameter
+the *server* did not advertise" is meaningless when the server is the one
+reading it. Amended by T16, 2026-08-12.
+
+**Receive direction: three kinds of parameter, not two.** `MailOptions` and
+`RcptOptions` are also what a server's parser produces, and a parser must
+distinguish:
+
+| | Handling |
+|---|---|
+| recognised, decoded | parsed into its typed field |
+| unknown, syntactically valid | preserved verbatim in `Extra []Param`, handed to the backend, never rejected |
+| original spelling | retained where round-trip fidelity matters: keyword case, and the exact `xtext` encoding of a value, which a `Received:` line or a forwarding decision may need to reproduce |
+
+A syntactically **invalid** parameter is not a fourth kind and needs no field: it
+is a parse failure, reported as an error like every other malformed input, and a
+server turns that error into a `501` naming the parameter.
+
+**Decision (T16, 2026-08-12): the original spelling is a field on `Param`, not a
+parallel raw slice.** A parallel slice would have to be index-matched against
+`Extra` by every consumer, and the association is exactly what must not be lost.
+`Param`'s doc comment already reserves the right to grow, so the field is
+additive and **lands with the receive-side parser in T17, not before** — T16 adds
+no field that nothing populates, per its own no-anticipation rule. T17 is bound
+by this decision; it does not get to revisit the shape.
+
 ### 1c. Enhanced status codes — server to client, must not be flattened
 
 RFC 3463 defines the `class.subject.detail` structure; RFC 5248 establishes the
@@ -113,10 +141,20 @@ an aborted *transaction*; it does not recover a half-written `DATA`.
 
 ```go
 // Good — a new extension adds a field.
-func (c *Client) Mail(ctx context.Context, from string, opts *MailOptions) error
+func (c *Client) Mail(ctx context.Context, from string, opts *smtp.MailOptions, send *MailSendOptions) error
 // Bad — DSN, SMTPUTF8, REQUIRETLS and MT-PRIORITY each want another parameter.
 func (c *Client) Mail(ctx context.Context, from string, size int64, body string) error
 ```
+
+**Two options structs on one command is legitimate, and `Mail`/`Rcpt` are the
+precedent** (T16, 2026-08-12). One carries the wire vocabulary and is shared with
+the receive direction (`*smtp.MailOptions`); the other carries this client's
+transmission policy (`*MailSendOptions`). They are separate because §10 forbids
+direction-specific policy inside shared vocabulary — and because a call whose
+only options struct is the shared one has nowhere to put client-only policy once
+the surface is frozen. A reviewer should read a second options struct as correct
+when the two have different *directions*, and as a smell when they merely have
+different *topics*: topics are fields.
 
 A `nil` options pointer must always be valid and mean "defaults". That is what
 lets us add *fields to an existing options struct* without breaking callers.
@@ -306,6 +344,89 @@ vocabulary in `package smtp`, DNSSEC anywhere in-tree, and any general
 `TLSPolicy`-style interface designed before the delivery layer has a caller for
 it. A speculative abstraction on a frozen surface is worse than a missing one —
 the missing one can be added.
+
+## 10. Direction-neutral vocabulary lives in `package smtp` — T16, 2026-08-12
+
+`package smtp` is the shared vocabulary for both directions of the protocol. A
+type that has only ever been exercised in the client direction can contain a
+field a server can consume but cannot naturally produce, and no client-side
+review finds it, because the client is the direction that works. `SERVER-DESIGN.md`
+§0 ran that review from the other end; T16 executed the result.
+
+**Rule.** Before a type or field is added to either public package, ask which of
+three things it is:
+
+| | Goes | Test |
+|---|---|---|
+| **shared vocabulary** | `package smtp` | both ends can produce it: a client sends it, a server's parser or advertiser produces it |
+| **call shape** | `smtpclient` (later `smtpserver`) | it describes how *this* library is invoked, not what is on the wire |
+| **direction-specific policy** | the direction's own package | it is meaningless, or means something different, at the other end |
+
+Applied:
+
+- **`Limits`, `ParseLimitsParam` (RFC 9422)** are shared vocabulary and moved to
+  `package smtp`. `LIMITS` is an advertisement: a client parses it, a server
+  produces it, and a backend must be able to declare its limits without
+  `smtpserver` importing `smtpclient`. `Client.Limits()` stays — an accessor over
+  negotiated session state is client-side even when its return type is not.
+- **`TraceEvent`, `TraceDirection`** moved for the same reason plus a usability
+  one: two incompatible `TraceDirection` types in one process is a tax on anyone
+  running both halves.
+- **`AllowUnadvertisedParameters`** was direction-specific policy inside a shared
+  type. It moved to `smtpclient.MailSendOptions` / `RcptSendOptions`. This is why
+  `Client.Mail` and `Client.Rcpt` take **two** options structs — the wire
+  vocabulary and the client's transmission policy — and it is deliberate: after
+  the freeze no client-only field can be added to a `MAIL` or `RCPT` call any
+  other way.
+- **`Recipient` stays in `smtpclient`.** It is a call shape: the input to
+  `RcptBatch`, which exists because of RFC 2920 pipelining. A server receives one
+  `RCPT TO` at a time and has no use for a batch.
+
+**Mechanism for a move.** Relocate the definition, leave a type alias behind
+(`type Limits = smtp.Limits`), and verify. An alias preserves type identity, so
+keyed struct literals and every existing caller keep compiling — the technique
+the standard library used for `context.Context`. Aliasing works for constants too
+(`const TraceSent = smtp.TraceSent`). A *removal* —
+`AllowUnadvertisedParameters` — has no such escape and is exactly why this audit
+was an M4 exit criterion rather than post-tag work.
+
+### `apidiff` cannot verify an alias-preserving move — finding, T16, 2026-08-12
+
+T16 was instructed to confirm each move compatible with `apidiff` and to treat a
+contrary result as the deliverable. The contrary result happened. Against the
+pre-move commit, `apidiff` reports **every** relocated symbol under
+*Incompatible changes*:
+
+```text
+- ./smtpclient.Limits: changed from Limits to github.com/kiliant/go-smtp.Limits
+- ./smtpclient.TraceEvent: changed from TraceEvent to github.com/kiliant/go-smtp.TraceEvent
+- ./smtpclient.ClientOptions.Trace: changed from func(TraceEvent) to func(TraceEvent)
+```
+
+The third line is the tell: the two signatures are textually identical. `apidiff`
+compares two independently loaded copies of the module and treats a type whose
+declaring package changed as a different type; it has no way to observe that an
+alias makes the two spellings **the same type**. The tool is measuring
+declaration provenance, and Go compatibility is decided by type identity.
+
+Consequences, all three binding:
+
+1. **The verification is a compile-time identity assertion, not an `apidiff`
+   line.** `smtpclient/alias_compat_test.go` declares
+   `var _ Limits = smtp.Limits{}` in both directions for every moved type, plus
+   the `ClientOptions.Trace` field shape. Assignment between two *distinct* named
+   types is illegal in Go even when their underlying types match, so replacing an
+   alias with a redeclared type fails the build. Mutation-checked: turning
+   `type Limits = smtp.Limits` into `type Limits smtp.Limits` breaks compilation
+   at that line.
+2. **Post-v1.0 the CI `apidiff` gate will fail on a correct alias-preserving
+   move.** The gate blocks on incompatibilities once a `v1.*` tag exists, and
+   this class of change trips it while breaking nobody. Treat such a report as a
+   finding to be adjudicated against the identity assertions above, not as an
+   automatic no.
+3. `apidiff` remains authoritative for **removals, additions and genuine
+   signature changes**, which is most of what it sees. This exception is narrow:
+   a symbol that moved between packages under an alias.
 
 ## Versioning policy
 

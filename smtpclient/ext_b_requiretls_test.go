@@ -29,7 +29,8 @@ func TestRequireTLSRejectedOverCleartextSession(t *testing.T) {
 	}
 	err = c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{
 		Delivery: &smtp.DeliveryOptions{RequireTLS: true},
-	})
+	}, nil)
+
 	if err == nil {
 		t.Fatal("Mail with RequireTLS succeeded over a cleartext session")
 	}
@@ -59,7 +60,7 @@ func TestRequireTLSPermittedAfterSTARTTLS(t *testing.T) {
 	}
 	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{
 		Delivery: &smtp.DeliveryOptions{RequireTLS: true},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -84,7 +85,7 @@ func TestRequireTLSPermittedOverImplicitTLS(t *testing.T) {
 	}
 	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{
 		Delivery: &smtp.DeliveryOptions{RequireTLS: true},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 }

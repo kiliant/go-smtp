@@ -182,10 +182,10 @@ func seedMessage(ctx context.Context, addr, rcpt string, body []byte, lmtp bool)
 		return err
 	}
 	defer c.Close()
-	if err := c.Mail(ctx, rcpt, nil); err != nil {
+	if err := c.Mail(ctx, rcpt, nil, nil); err != nil {
 		return err
 	}
-	if err := c.Rcpt(ctx, rcpt, nil); err != nil {
+	if err := c.Rcpt(ctx, rcpt, nil, nil); err != nil {
 		return err
 	}
 	if _, err := c.Data(ctx, bytes.NewReader(body), nil); err != nil {
