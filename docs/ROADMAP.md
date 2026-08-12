@@ -63,9 +63,17 @@ engineering — and the bidirectional vocabulary audit.
 
 **Exit:** `apidiff` gate active in CI; API surface test passes; every exported
 symbol has a doc comment; examples compile and run against the matrix; a full
-30-minute fuzz campaign over every discovered target is clean; **`package smtp`
-has been reviewed from the server direction (T16) and every finding has a
-recorded verdict, executed or explicitly declined.**
+fuzz campaign over every **discovered** target is clean at **10 minutes per
+target** (human-approved 2026-08-03; `.github/workflows/fuzz-long.yml` and
+`.github/RELEASING.md` are the operative figures, and this line previously said
+30 minutes, which was never the duration anything ran); **`package smtp` has been
+reviewed from the server direction (T16) and every finding has a recorded
+verdict, executed or explicitly declined.**
+
+Per *discovered* target, not per known target, is the load-bearing half of that
+sentence: a coverage audit on 2026-08-03 found four parsers and invariants with no
+fuzz target at all, taking discovery from 17 to 21, which retroactively voided a
+campaign that had reported 17/17 green.
 
 That last criterion is new, and it is not a formality. Adding a type to
 `package smtp` after the tag is additive and always allowed; **reshaping one is
