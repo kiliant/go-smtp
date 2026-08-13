@@ -99,7 +99,7 @@ func checkFunctionDeclaration(t *testing.T, set *token.FileSet, filename string,
 		t.Errorf("%s: exported function %s exposes an internal package", position(set, filename, declaration.Pos()), declaration.Name.Name)
 	}
 	switch declaration.Name.Name {
-	case "Shutdown", "Run":
+	case "Serve", "Shutdown", "Run":
 		if !contextFirst(declaration.Type) {
 			t.Errorf("%s: %s is not context-first", position(set, filename, declaration.Pos()), declaration.Name.Name)
 		}

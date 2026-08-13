@@ -99,13 +99,15 @@ type commandRule struct {
 // perform syntax and backend work; they do not grow their own state checks.
 // Extension commands add a row here when their implementation lands.
 var commandRules = map[string]commandRule{
-	"HELO":     {modes: modeSetSMTP, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients)},
-	"EHLO":     {modes: modeSetSMTP, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients)},
-	"LHLO":     {modes: modeSetLMTP, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients)},
-	"MAIL":     {modes: modeSetBoth, phases: phases(phaseReady, phaseMail, phaseRecipients)},
-	"RCPT":     {modes: modeSetBoth, phases: phases(phaseMail, phaseRecipients)},
-	"DATA":     {modes: modeSetBoth, phases: phases(phaseRecipients)},
-	"BDAT":     {modes: modeSetBoth, phases: phases(phaseRecipients, phaseFailedBDAT)},
+	"HELO": {modes: modeSetSMTP, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients)},
+	"EHLO": {modes: modeSetSMTP, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients)},
+	"LHLO": {modes: modeSetLMTP, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients)},
+	"MAIL": {modes: modeSetBoth, phases: phases(phaseReady, phaseMail, phaseRecipients)},
+	"RCPT": {modes: modeSetBoth, phases: phases(phaseMail, phaseRecipients)},
+	"DATA": {modes: modeSetBoth, phases: phases(phaseRecipients)},
+	// BDAT reaches its handler after a greeting even without MAIL/RCPT so the
+	// framework can consume the announced content octets before replying 503.
+	"BDAT":     {modes: modeSetBoth, phases: phases(phaseReady, phaseMail, phaseRecipients, phaseFailedBDAT)},
 	"RSET":     {modes: modeSetBoth, phases: phases(phaseReady, phaseMail, phaseRecipients, phaseFailedBDAT)},
 	"NOOP":     {modes: modeSetBoth, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients, phaseFailedBDAT)},
 	"QUIT":     {modes: modeSetBoth, phases: phases(phaseConnected, phaseReady, phaseMail, phaseRecipients, phaseFailedBDAT)},

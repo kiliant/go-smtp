@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type constructionConfig struct {
@@ -18,6 +20,13 @@ type constructionConfig struct {
 	maxTotalSpoolMemory int64
 	maxConcurrentSpools int
 	maxConnections      int
+	greetingIdentity    string
+	commandTimeout      time.Duration
+	dataTimeout         time.Duration
+	maxMessageBytes     int64
+	maxRecipients       int
+	authBefore          []string
+	authAfter           []string
 }
 
 func validateConstruction(config constructionConfig) error {
@@ -34,6 +43,23 @@ func validateConstruction(config constructionConfig) error {
 	if config.binaryMIME && !config.chunking {
 		problems = append(problems, "BINARYMIME requires CHUNKING")
 	}
+	if !validGreetingIdentity(config.greetingIdentity) {
+		problems = append(problems, "GreetingIdentity must be a domain or address-literal without whitespace")
+	}
+	if config.commandTimeout <= 0 {
+		problems = append(problems, "CommandTimeout must be positive")
+	}
+	if config.dataTimeout <= 0 {
+		problems = append(problems, "DataTimeout must be positive")
+	}
+	if config.maxMessageBytes <= 0 {
+		problems = append(problems, "MaxMessageBytes must be positive")
+	}
+	if config.maxRecipients < 100 {
+		problems = append(problems, "MaxRecipients must be at least 100")
+	}
+	problems = append(problems, validateAuthMechanisms("AuthMechanismsBeforeTLS", config.authBefore)...)
+	problems = append(problems, validateAuthMechanisms("AuthMechanismsAfterTLS", config.authAfter)...)
 	if config.chunking {
 		if config.maxSpoolBytes <= 0 {
 			problems = append(problems, "MaxSpoolBytes must be positive when CHUNKING is enabled")
@@ -55,6 +81,30 @@ func validateConstruction(config constructionConfig) error {
 		return errors.New("smtpserver: invalid server options: " + joinProblems(problems))
 	}
 	return nil
+}
+
+func validateAuthMechanisms(field string, mechanisms []string) []string {
+	seen := make(map[string]bool)
+	var problems []string
+	for i, mechanism := range mechanisms {
+		name := strings.ToUpper(mechanism)
+		if name == "" {
+			problems = append(problems, field+" contains an empty mechanism")
+			continue
+		}
+		for _, c := range name {
+			if (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' {
+				problems = append(problems, field+" contains an invalid mechanism at index "+strconv.Itoa(i))
+				break
+			}
+		}
+		if seen[name] {
+			problems = append(problems, field+" contains duplicate mechanism "+name)
+		}
+		seen[name] = true
+		mechanisms[i] = name
+	}
+	return problems
 }
 
 func validateSession(session *Session) error {

@@ -21,20 +21,20 @@ servers exercise the capability itself, not merely advertise it.
 
 ## Base — RFC 5321 core and the session extensions
 
-| Capability | RFC | Task | Status |
-|---|---|---|---|
-| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | verified [^core] |
-| VRFY | 5321 | T05 | done [^vrfy] |
-| EXPN | 5321 | T05 | done |
-| HELP | 5321 | T05 | done |
-| Message Submission | 6409 | T03 | done [^submission] |
-| STARTTLS | 3207 | T03 | done |
-| PIPELINING | 2920 | T03 | verified [^pipelining] |
-| ENHANCEDSTATUSCODES | 2034 | T01,T02,T03 | done [^esc] |
-| AUTH | 4954 | T04 | done |
-| LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | done [^lmtp] |
-| `Received:` trace-field generation | 5321 §4.4 | T17 | done [^received] |
-| `Received:` `WITH` transmission types | 3848 | T17 | done [^received] |
+| Capability | RFC | Client task | Client status | Server task | Server status |
+|---|---|---|---|---|---|
+| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | verified [^core] | T20 | done |
+| VRFY | 5321 | T05 | done [^vrfy] | T20 | done |
+| EXPN | 5321 | T05 | done | T20 | done |
+| HELP | 5321 | T05 | done | T20 | done |
+| Message Submission | 6409 | T03 | done [^submission] | T20 | done |
+| STARTTLS | 3207 | T03 | done | T20 | done |
+| PIPELINING | 2920 | T03 | verified [^pipelining] | T20 | done |
+| ENHANCEDSTATUSCODES | 2034 | T01,T02,T03 | done [^esc] | T20 | done |
+| AUTH | 4954 | T04 | done | T20 | done |
+| LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | done [^lmtp] | T20 | done |
+| `Received:` trace-field generation | 5321 §4.4 | — | — | T17,T20 | done [^received] |
+| `Received:` `WITH` transmission types | 3848 | — | — | T17,T20 | done [^received] |
 
 [^vrfy]: The IANA registry cites `draft-ietf-emailcore-rfc5321bis` for `VRFY`.
     That draft is at revision 44, sits in the RFC Editor queue in state
@@ -80,14 +80,14 @@ servers exercise the capability itself, not merely advertise it.
 
 The extensions that change how message content itself is transmitted.
 
-| Capability | RFC | Status |
-|---|---|---|
-| SIZE | 1870 | done |
-| 8BITMIME | 6152 | verified [^transport-interop] |
-| SMTPUTF8 | 6531 | verified [^transport-interop] |
-| CHUNKING | 3030 | verified [^transport-interop] |
-| BINARYMIME | 3030 | done |
-| UTF8SMTP | 5336 | done [^utf8smtp] |
+| Capability | RFC | Client status | Server status |
+|---|---|---|---|
+| SIZE | 1870 | done | done (T20) |
+| 8BITMIME | 6152 | verified [^transport-interop] | done (T20) |
+| SMTPUTF8 | 6531 | verified [^transport-interop] | done (T20) |
+| CHUNKING | 3030 | verified [^transport-interop] | done (T20) |
+| BINARYMIME | 3030 | done | done (T20, opt-in) |
+| UTF8SMTP | 5336 | done [^utf8smtp] | — (obsolete) |
 
 [^transport-interop]: The `smtpclient` interop suite submits the same fixture
     bytes through DATA and CHUNKING/BDAT to Postfix and Stalwart and reads them

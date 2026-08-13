@@ -49,7 +49,12 @@ func evaluateDataCall(
 	result, callErr := handler(ctx, tracked)
 	returnedEarly := !tracked.exhausted
 	if returnedEarly {
-		if _, err := io.Copy(io.Discard, tracked); err != nil {
+		if _, err := io.Copy(io.Discard, tracked); errors.Is(err, errMessageTooLarge) {
+			_, err = io.Copy(io.Discard, tracked)
+			if err != nil {
+				return dataEvaluation{closeConnection: true, cause: fmt.Errorf("smtpserver: drain message data: %w", err)}
+			}
+		} else if err != nil {
 			return dataEvaluation{closeConnection: true, cause: fmt.Errorf("smtpserver: drain message data: %w", err)}
 		}
 	}

@@ -59,16 +59,21 @@ type Limits struct {
 	// CRLF. RFC 5321 requires servers to accept at least 512 octets; the
 	// default is larger while still bounding unauthenticated input tightly.
 	MaxCommandLineLength int
+	// MaxSASLResponseLength caps one base64 continuation line in an RFC 4954
+	// authentication exchange. SASL responses have a separate, larger bound
+	// from ordinary SMTP commands.
+	MaxSASLResponseLength int
 }
 
 // Package defaults. Exported indirectly via DefaultLimits and via Limits'
 // zero-value fallback behaviour.
 const (
-	defaultMaxReplyLineLength   = 8192     // well above the 512-octet RFC minimum
-	defaultMaxReplyLines        = 1000     // generous EHLO extension list
-	defaultMaxReplySize         = 1 << 20  // 1 MiB total reply text
-	defaultMaxBDATChunkSize     = 64 << 20 // 64 MiB; smtpclient may lower per negotiated SIZE
-	defaultMaxCommandLineLength = 4096     // includes CRLF; safely above RFC 5321's 512-octet minimum
+	defaultMaxReplyLineLength    = 8192     // well above the 512-octet RFC minimum
+	defaultMaxReplyLines         = 1000     // generous EHLO extension list
+	defaultMaxReplySize          = 1 << 20  // 1 MiB total reply text
+	defaultMaxBDATChunkSize      = 64 << 20 // 64 MiB; smtpclient may lower per negotiated SIZE
+	defaultMaxCommandLineLength  = 4096     // includes CRLF; safely above RFC 5321's 512-octet minimum
+	defaultMaxSASLResponseLength = 32 << 10 // accommodates the responder payload bound after base64 encoding
 )
 
 // DefaultLimits returns the package's built-in limits explicitly. Equivalent
@@ -77,11 +82,12 @@ const (
 // only some fields.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxReplyLineLength:   defaultMaxReplyLineLength,
-		MaxReplyLines:        defaultMaxReplyLines,
-		MaxReplySize:         defaultMaxReplySize,
-		MaxBDATChunkSize:     defaultMaxBDATChunkSize,
-		MaxCommandLineLength: defaultMaxCommandLineLength,
+		MaxReplyLineLength:    defaultMaxReplyLineLength,
+		MaxReplyLines:         defaultMaxReplyLines,
+		MaxReplySize:          defaultMaxReplySize,
+		MaxBDATChunkSize:      defaultMaxBDATChunkSize,
+		MaxCommandLineLength:  defaultMaxCommandLineLength,
+		MaxSASLResponseLength: defaultMaxSASLResponseLength,
 	}
 }
 
@@ -100,6 +106,9 @@ func (l Limits) withDefaults() Limits {
 	}
 	if l.MaxCommandLineLength <= 0 {
 		l.MaxCommandLineLength = defaultMaxCommandLineLength
+	}
+	if l.MaxSASLResponseLength <= 0 {
+		l.MaxSASLResponseLength = defaultMaxSASLResponseLength
 	}
 	return l
 }

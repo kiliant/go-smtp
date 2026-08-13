@@ -45,6 +45,11 @@ type MailOptions struct {
 	// than collapsing it to the empty string, which would lose the
 	// distinction.
 	Auth string
+	// AuthOriginal preserves the exact received RFC 4954 AUTH esmtp-param,
+	// including keyword case and xtext spelling. It is populated by a server
+	// parser alongside decoded Auth and is ignored when sending; callers that
+	// forward the parameter verbatim may opt to use it explicitly.
+	AuthOriginal *Param
 	// Extra carries esmtp-params this library does not model with a typed
 	// field. It is the escape hatch required by docs/API-STABILITY.md §1b:
 	// a caller who needs a parameter that has not been implemented yet must

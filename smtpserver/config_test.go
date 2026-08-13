@@ -76,18 +76,15 @@ func TestValidateConstructionRejectsBinaryMIMEWithoutChunking(t *testing.T) {
 
 func TestValidateConstructionAllowsOversubscribedSpoolProduct(t *testing.T) {
 	listener := &stubListener{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 2525}}
-	err := validateConstruction(constructionConfig{
-		listener:            listener,
-		mode:                modeSMTP,
-		backendNewSession:   true,
-		chunking:            true,
-		maxSpoolBytes:       1 << 20,
-		maxSpoolMemoryBytes: 1 << 16,
-		maxTotalSpoolBytes:  1 << 20,
-		maxTotalSpoolMemory: 1 << 16,
-		maxConcurrentSpools: 8,
-		maxConnections:      100,
-	})
+	config := validConstructionConfig(listener)
+	config.chunking = true
+	config.maxSpoolBytes = 1 << 20
+	config.maxSpoolMemoryBytes = 1 << 16
+	config.maxTotalSpoolBytes = 1 << 20
+	config.maxTotalSpoolMemory = 1 << 16
+	config.maxConcurrentSpools = 8
+	config.maxConnections = 100
+	err := validateConstruction(config)
 	if err != nil {
 		t.Fatalf("oversubscribed product rejected: %v", err)
 	}
@@ -95,9 +92,21 @@ func TestValidateConstructionAllowsOversubscribedSpoolProduct(t *testing.T) {
 
 func TestValidateConstructionDoesNotRequireSpoolWhenChunkingDisabled(t *testing.T) {
 	listener := &stubListener{addr: testAddr("smtp")}
-	err := validateConstruction(constructionConfig{listener: listener, backendNewSession: true})
+	err := validateConstruction(validConstructionConfig(listener))
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func validConstructionConfig(listener net.Listener) constructionConfig {
+	return constructionConfig{
+		listener:          listener,
+		backendNewSession: true,
+		greetingIdentity:  "smtp.example",
+		commandTimeout:    defaultCommandTimeout,
+		dataTimeout:       defaultDataTimeout,
+		maxMessageBytes:   defaultMaxMessageBytes,
+		maxRecipients:     defaultMaxRecipients,
 	}
 }
 
