@@ -1,8 +1,9 @@
 // Package greenmail registers the GreenMail interop profile: a JVM
 // implementation with a minimal extension set (docs/INTEROP.md).
 //
-// Verified running on 2026-08-02 against docker.io/greenmail/standalone:2.1.9
-// with GREENMAIL_OPTS enabling the SMTP service, a static
+// Verified running on 2026-08-02 against docker.io/greenmail/standalone:2.1.9,
+// pinned below to that tag's multi-arch index digest. GREENMAIL_OPTS enables
+// the SMTP service, a static
 // interop:interop-pw@example.test user and disabled auth enforcement. EHLO
 // advertised
 //
@@ -61,7 +62,7 @@ func init() {
 		Name: "greenmail",
 		Tier: harness.Tier2,
 		Run: harness.RunConfig{
-			Image: "docker.io/greenmail/standalone:2.1.9",
+			Image: "docker.io/greenmail/standalone@sha256:3ac5a83dd6727cf95e4d50e18907fb8ee7bbf5f67e8534714dee2fb1b5b2e1d4",
 			Ports: []int{smtpPort, httpPort},
 			Env: map[string]string{
 				"GREENMAIL_OPTS": greenOpts,

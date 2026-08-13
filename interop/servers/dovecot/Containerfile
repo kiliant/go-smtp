@@ -6,7 +6,9 @@
 # An address not listed in ./users is rejected at RCPT with a real "user
 # doesn't exist" reply, which is what lets the interop suite exercise a
 # genuine mixed accept/reject multi-recipient transaction.
-FROM docker.io/dovecot/dovecot:2.4.3
+# docker.io/dovecot/dovecot:2.4.3, pinned to its multi-arch manifest-list
+# digest rather than the mutable version tag.
+FROM docker.io/dovecot/dovecot@sha256:73c42d0071c54d3c05b9e5c659a1cb5bdd07093d565de87ff06d481d79ebbd94
 
 COPY interop.conf /etc/dovecot/conf.d/99-interop.conf
 COPY users /etc/dovecot/users

@@ -1,4 +1,6 @@
-FROM docker.io/stalwartlabs/mail-server:v0.11.8
+# docker.io/stalwartlabs/mail-server:v0.11.8, pinned to its multi-arch
+# index digest so local arm64 and hosted amd64 runs use the same release.
+FROM docker.io/stalwartlabs/mail-server@sha256:a5ce0615640b29a01c0a55b9fff6dd2c9dfa261ec87862c22e4db7e0254cdb1f
 
 COPY config.toml /etc/stalwart/config.toml
 
