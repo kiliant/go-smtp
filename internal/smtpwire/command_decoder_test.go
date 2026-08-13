@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,6 +28,35 @@ func TestReadCommandPreservesArgumentAndPipeline(t *testing.T) {
 	}
 	if _, err := lr.ReadCommand(time.Time{}, Limits{}); !errors.Is(err, io.EOF) {
 		t.Fatalf("ReadCommand at boundary = %v, want io.EOF", err)
+	}
+}
+
+func TestReadSASLResponseAcceptsBase64PaddingAndAbort(t *testing.T) {
+	reader := NewLineReader(strings.NewReader("dXNlcg==\r\n*\r\n"))
+	first, err := reader.ReadSASLResponse(time.Time{}, Limits{})
+	if err != nil || first != "dXNlcg==" {
+		t.Fatalf("first = %q, %v", first, err)
+	}
+	second, err := reader.ReadSASLResponse(time.Time{}, Limits{})
+	if err != nil || second != "*" {
+		t.Fatalf("second = %q, %v", second, err)
+	}
+}
+
+func TestReadSASLResponseHasIndependentLineLimit(t *testing.T) {
+	response := strings.Repeat("A", 5000)
+	got, err := NewLineReader(strings.NewReader(response+"\r\n")).ReadSASLResponse(time.Time{}, Limits{})
+	if err != nil || got != response {
+		t.Fatalf("ReadSASLResponse length %d: %v", len(got), err)
+	}
+	reader := NewLineReader(strings.NewReader("AAAAAAAA\r\nNOOP\r\n"))
+	_, err = reader.ReadSASLResponse(time.Time{}, Limits{MaxSASLResponseLength: 5})
+	if !errors.Is(err, ErrCommandLineTooLong) {
+		t.Fatalf("limited ReadSASLResponse = %v, want ErrCommandLineTooLong", err)
+	}
+	command, err := reader.ReadCommand(time.Time{}, Limits{})
+	if err != nil || command.Verb != "NOOP" {
+		t.Fatalf("command after drained SASL line = %+v, %v", command, err)
 	}
 }
 

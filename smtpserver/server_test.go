@@ -78,6 +78,69 @@ func TestNewServerRejectsUnknownMode(t *testing.T) {
 	}
 }
 
+func TestNewServerDefaultsAndClonesCommandConfiguration(t *testing.T) {
+	after := []string{"plain", "SCRAM-SHA-256"}
+	server, err := NewServer(&ServerOptions{
+		Listener:               &stubListener{addr: testAddr("smtp")},
+		Backend:                validBackend(),
+		AuthMechanismsAfterTLS: after,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after[0] = "changed"
+	if server.identity == "" || server.timeouts.command <= 0 || server.timeouts.data <= 0 {
+		t.Fatalf("defaults were not applied: %+v", server)
+	}
+	if server.maxMessage != defaultMaxMessageBytes || server.maxRcpt != 100 {
+		t.Fatalf("limits = (%d, %d)", server.maxMessage, server.maxRcpt)
+	}
+	if len(server.authBefore) != 0 || len(server.authAfter) != 2 || server.authAfter[0] != "PLAIN" {
+		t.Fatalf("AUTH lists = before %#v after %#v", server.authBefore, server.authAfter)
+	}
+}
+
+func TestNewServerRejectsCommandConfigurationDefects(t *testing.T) {
+	_, err := NewServer(&ServerOptions{
+		Listener:                &stubListener{addr: testAddr("smtp")},
+		Backend:                 validBackend(),
+		GreetingIdentity:        "bad identity",
+		CommandTimeout:          -1,
+		DataTimeout:             -1,
+		MaxMessageBytes:         -1,
+		MaxRecipients:           99,
+		AuthMechanismsBeforeTLS: []string{"PLAIN", "plain", "bad name"},
+	})
+	if err == nil {
+		t.Fatal("NewServer accepted invalid command configuration")
+	}
+	for _, want := range []string{"GreetingIdentity", "CommandTimeout", "DataTimeout", "MaxMessageBytes", "MaxRecipients", "duplicate mechanism", "invalid mechanism"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %s", err, want)
+		}
+	}
+}
+
+func TestNewServerRejectsUnreachableSubmissionPolicies(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		opts ServerOptions
+		want string
+	}{
+		{name: "required TLS", opts: ServerOptions{RequireTLS: true}, want: "TLSConfig"},
+		{name: "required auth", opts: ServerOptions{RequireAuth: true}, want: "AUTH mechanism"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			test.opts.Listener = &stubListener{addr: testAddr("smtp")}
+			test.opts.Backend = validBackend()
+			_, err := NewServer(&test.opts)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %s", err, test.want)
+			}
+		})
+	}
+}
+
 func validBackend() *Backend {
 	return &Backend{NewSession: func(context.Context, *ConnInfo, *NewSessionOptions) (*Session, error) {
 		return &Session{

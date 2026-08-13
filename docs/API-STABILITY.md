@@ -114,11 +114,16 @@ case row 3 was written for:
   applies today to `ENVID=` (`DSNMailOptions.EnvelopeID`), `ORCPT=`
   (`DSNRcptOptions.Original`), `AUTH=` (`MailOptions.Auth`) and `SUBMITTER=`
   (`LegacyOptions.Submitter`), and to every future xtext parameter this library
-  models with a typed field. **The shape is T17's to choose** against its parser.
-  It is additive either way: every affected struct carries the §7 guard.
+  models with a typed field. The receive parser uses an adjacent
+  `Original *Param` field, such as `MailOptions.AuthOriginal`, for that exact
+  wire form. Nil means the parameter was absent. The normal send path uses the
+  decoded typed field; a relay that intentionally needs byte-for-byte parameter
+  forwarding may use the original explicitly. Future decoded xtext parameters
+  follow this same additive companion-field pattern; every affected struct
+  carries the §7 guard.
 
-Both land with the receive-side parser in T17, not before — T16 adds no field that
-nothing populates, per its own no-anticipation rule.
+Both land with the receive-side parser that populates them, never earlier as an
+anticipatory field with no producer.
 
 ### 1c. Enhanced status codes — server to client, must not be flattened
 

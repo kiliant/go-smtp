@@ -71,6 +71,26 @@ func (lr *LineReader) ReadCommand(deadline time.Time, limits Limits) (Command, e
 	return Command{Verb: verb, Argument: argument}, nil
 }
 
+// ReadSASLResponse reads one strict CRLF-terminated RFC 4954 client response.
+// Unlike ReadCommand, the whole line is opaque base64 data (or the abort token
+// "*") and therefore is not subjected to command-verb syntax validation.
+func (lr *LineReader) ReadSASLResponse(deadline time.Time, limits Limits) (string, error) {
+	limits = limits.withDefaults()
+	if err := lr.setDeadline(deadline); err != nil {
+		return "", err
+	}
+	line, err := lr.readCommandLine(limits.MaxSASLResponseLength)
+	if err != nil {
+		return "", err
+	}
+	for i, b := range line {
+		if b < 0x20 || b == 0x7f {
+			return "", fmt.Errorf("%w: byte 0x%02x at offset %d", ErrCommandArgumentControl, b, i)
+		}
+	}
+	return string(line), nil
+}
+
 func (lr *LineReader) readCommandLine(max int) ([]byte, error) {
 	line := make([]byte, 0, min(max, 128))
 	for consumed := 0; ; consumed++ {
@@ -85,6 +105,17 @@ func (lr *LineReader) readCommandLine(max int) ([]byte, error) {
 			return nil, err
 		}
 		if consumed+1 > max {
+			// Consume the rest of an oversized line before returning. The
+			// server normally closes after this framing failure, but AUTH owes
+			// a 500 reply and a peer may still be blocked writing the tail.
+			// Draining under the existing deadline prevents a write/write
+			// deadlock without allocating in proportion to attacker input.
+			for b != '\n' {
+				b, err = lr.br.ReadByte()
+				if err != nil {
+					return nil, err
+				}
+			}
 			return nil, ErrCommandLineTooLong
 		}
 		if b != '\n' {
