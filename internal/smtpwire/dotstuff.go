@@ -44,11 +44,12 @@ import (
 //
 // DotUnstuffReader is deliberately less strict, because it reads what some
 // other implementation chose to send: it un-stuffs after a bare LF as
-// readily as after a CRLF. The one place it is strict is the end-of-content
-// marker, where RFC 5321 §4.1.1.4 is explicit that "<LF>.<LF>" MUST NOT be
-// treated as equivalent to "<CRLF>.<CRLF>" — accepting it there is the
-// receiving half of the same smuggling bug, so it is an error, not a
-// leniency.
+// readily as after a CRLF. It is strict about terminator-shaped ambiguity:
+// RFC 5321 §4.1.1.4 explicitly says "<LF>.<LF>" MUST NOT be treated as
+// equivalent to "<CRLF>.<CRLF>", and "<CR>.<CR><LF>" would terminate for a
+// peer treating bare CR as a line ending. Accepting either as content would
+// be the receiving half of a smuggling bug, so both are errors, not
+// leniencies.
 
 // dotDot is the two bytes written in place of a leading '.' on a stuffed
 // line.
@@ -242,9 +243,12 @@ func (d *DotStuffWriter) Close() error {
 	return err
 }
 
-// ErrMalformedTerminator is returned by DotUnstuffReader when a line begins
-// with a '.' immediately followed by a CR that is not itself followed by an
-// LF — a malformed terminator attempt.
+// ErrMalformedTerminator is returned by DotUnstuffReader for a malformed or
+// ambiguous terminator attempt. This includes a line-start '.' followed by a
+// CR that is not itself followed by LF, and the SMTP-smuggling form
+// "<CR>.<CR><LF>": a receiver treating bare CR as a line ending would
+// terminate there, so accepting the same bytes as content would desynchronise
+// the two interpretations.
 var ErrMalformedTerminator = errors.New("smtpwire: malformed dot-stuffing terminator")
 
 // ErrBareLFTerminator is returned by DotUnstuffReader when a line begins
@@ -273,8 +277,14 @@ var ErrBareLFTerminator = errors.New("smtpwire: bare-LF end-of-content marker (R
 type DotUnstuffReader struct {
 	lr          *LineReader
 	atLineStart bool
-	done        bool
-	err         error
+	// previousCR remembers the immediately preceding content octet across
+	// Read calls. A '.' following a bare CR is not a valid RFC 5321 line
+	// start, but a terminator-shaped sequence there is ambiguous to peers
+	// that accept bare CR as a line ending and must be rejected rather than
+	// passed through as content.
+	previousCR bool
+	done       bool
+	err        error
 }
 
 // NewDotUnstuffReader returns a DotUnstuffReader reading from lr.
@@ -332,15 +342,35 @@ func (d *DotUnstuffReader) Read(p []byte) (int, error) {
 			p[n] = b
 			n++
 			d.atLineStart = b == '\n'
+			d.previousCR = b == '\r'
 			continue
 		}
 		b, err := br.ReadByte()
 		if err != nil {
 			return n, d.fail(n, normalizeReadErr(err))
 		}
+		if d.previousCR && b == '.' {
+			peek, err := br.Peek(1)
+			if err != nil {
+				return n, d.fail(n, fmt.Errorf("smtpwire: truncated dot-stuffed stream after bare CR and '.': %w", normalizeReadErr(err)))
+			}
+			if peek[0] == '\n' {
+				return n, d.fail(n, ErrMalformedTerminator)
+			}
+			if peek[0] == '\r' {
+				tail, err := br.Peek(2)
+				if err != nil {
+					return n, d.fail(n, fmt.Errorf("smtpwire: truncated dot-stuffed stream after bare CR and '.': %w", normalizeReadErr(err)))
+				}
+				if tail[1] == '\n' {
+					return n, d.fail(n, ErrMalformedTerminator)
+				}
+			}
+		}
 		p[n] = b
 		n++
 		d.atLineStart = b == '\n'
+		d.previousCR = b == '\r'
 	}
 	return n, nil
 }

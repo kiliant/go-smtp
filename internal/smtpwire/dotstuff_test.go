@@ -3,6 +3,7 @@ package smtpwire
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -347,6 +348,38 @@ func TestDotUnstuffMalformedTerminator(t *testing.T) {
 	_, err := io.ReadAll(ur)
 	if !errors.Is(err, ErrMalformedTerminator) {
 		t.Fatalf("err = %v, want ErrMalformedTerminator", err)
+	}
+}
+
+// TestDotUnstuffRejectsBareCRTerminator pins the published <CR>.<CR><LF>
+// SMTP-smuggling vector. The preceding CR and candidate marker routinely land
+// in separate Read calls, so every small destination-buffer size is exercised.
+// A peer treating bare CR as a line ending would terminate at the marker; this
+// reader must reject the ambiguity instead of accepting it as message content.
+func TestDotUnstuffRejectsBareCRTerminator(t *testing.T) {
+	const stream = "body\r.\r\nNOOP\r\n.\r\n"
+	for _, readSize := range []int{1, 2, 3, 7, 64} {
+		t.Run(fmt.Sprintf("read-size-%d", readSize), func(t *testing.T) {
+			lr := NewLineReader(strings.NewReader(stream))
+			ur := NewDotUnstuffReader(lr)
+			buf := make([]byte, readSize)
+			var err error
+			for err == nil {
+				_, err = ur.Read(buf)
+			}
+			if !errors.Is(err, ErrMalformedTerminator) {
+				t.Fatalf("err = %v, want ErrMalformedTerminator", err)
+			}
+		})
+	}
+}
+
+func TestDotUnstuffPreservesNonTerminatorAfterBareCR(t *testing.T) {
+	const stream = "body\r.not-a-marker\r\nbody\r..stuffed-for-bare-cr-peer\r\n.\r\n"
+	got := unstuffAll(t, []byte(stream), 1)
+	want := []byte("body\r.not-a-marker\r\nbody\r..stuffed-for-bare-cr-peer\r\n")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("content = %q, want %q", got, want)
 	}
 }
 
