@@ -1,0 +1,14 @@
+# Exim sender for T22's server-direction external relay check. Debian's
+# multi-arch index is digest-pinned; Exim publishes no maintained usable image.
+FROM debian@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
+
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends exim4-daemon-light \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY exim4.conf /etc/exim4/exim4.conf.template
+COPY entrypoint.sh /usr/local/bin/gosmtp-exim-sender
+RUN chmod 0755 /usr/local/bin/gosmtp-exim-sender
+
+EXPOSE 25
+CMD ["/usr/local/bin/gosmtp-exim-sender"]

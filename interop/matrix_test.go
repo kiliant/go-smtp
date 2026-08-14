@@ -1,6 +1,6 @@
 //go:build interop
 
-// Package interop drives the podman-backed server matrix described in
+// Package interop drives the server matrix described in
 // docs/INTEROP.md. Run separately from ./smtpclient's own interop-tagged
 // tests (see that doc for why): each test process here owns an independent
 // set of container lifecycles.
@@ -26,6 +26,7 @@ import (
 	// side effect of import, independent of test execution order.
 	_ "github.com/kiliant/go-smtp/interop/servers/dovecot"
 	_ "github.com/kiliant/go-smtp/interop/servers/exim"
+	_ "github.com/kiliant/go-smtp/interop/servers/gosmtp"
 	_ "github.com/kiliant/go-smtp/interop/servers/greenmail"
 	_ "github.com/kiliant/go-smtp/interop/servers/james"
 	_ "github.com/kiliant/go-smtp/interop/servers/maddy"
@@ -40,6 +41,9 @@ func TestProfilesUseDigestPinnedImages(t *testing.T) {
 	const digestMarker = "@sha256:"
 
 	for _, p := range harness.Profiles() {
+		if p.Start != nil {
+			continue
+		}
 		if p.Run.Image != "" {
 			if !strings.Contains(p.Run.Image, digestMarker) {
 				t.Errorf("profile %s image %q is not digest-pinned", p.Name, p.Run.Image)
@@ -97,9 +101,7 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.StartTimeout+cfg.HealthTimeout+cfg.SinkTimeout)
 	defer cancel()
 
-	run := p.Run
-	run.Name = harness.ContainerName(p.Name)
-	h, err := harness.Run(ctx, run)
+	h, err := harness.StartProfile(ctx, p)
 	if err != nil {
 		t.Fatalf("starting %s: %v", p.Name, err)
 	}
@@ -126,12 +128,12 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 		t.Fatalf("%s: assert-profile: %v", p.Name, result.Err)
 	}
 
-	if p.NewSink == nil {
-		return
-	}
-	sink, err := p.NewSink(ctx, h)
+	sink, err := h.NewSink(ctx)
 	if err != nil {
 		t.Fatalf("%s: building sink: %v", p.Name, err)
+	}
+	if sink == nil {
+		return
 	}
 	// Reset is best-effort here: the container is freshly started, so an
 	// empty inbox does not depend on it succeeding, and this profile's sink
@@ -174,8 +176,8 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 	defer sinkCancel()
 	got, err := harness.WaitForMessage(sinkCtx, sink, recipient)
 	if err != nil {
-		if logs, logErr := h.Logs(context.Background()); logErr == nil {
-			t.Logf("%s container logs:\n%s", p.Name, logs)
+		if logs, logErr := h.Logs(context.Background()); logErr == nil && logs != "" {
+			t.Logf("%s runtime logs:\n%s", p.Name, logs)
 		}
 		t.Fatalf("%s: reading back the seeded message: %v", p.Name, err)
 	}

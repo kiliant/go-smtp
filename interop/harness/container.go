@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // RunConfig describes one container to start. Construct with keyed fields:
@@ -37,13 +38,20 @@ type RunConfig struct {
 	_ struct{}
 }
 
-// Handle is a started container. Callers must call Stop (directly or via
-// t.Cleanup) exactly once to release it; Stop is idempotent so a deferred
+// Handle is one started profile runtime. Callers must call Stop (directly or
+// via t.Cleanup) exactly once to release it; Stop is idempotent so a deferred
 // call after an explicit one is harmless.
 type Handle struct {
 	Name       string
 	hostPorts  map[int]int
+	hostAddrs  map[int]string
 	podmanPath string
+	sink       Sink
+	newSink    func(ctx context.Context, h *Handle) (Sink, error)
+	stop       func(ctx context.Context) error
+	logs       func(ctx context.Context) (string, error)
+	stopOnce   sync.Once
+	stopErr    error
 }
 
 // podmanBinary returns the resolved podman executable, or an error
@@ -158,15 +166,18 @@ func (h *Handle) resolvePorts(ctx context.Context, containerPorts []int) (map[in
 	return out, nil
 }
 
-// HostPort returns the host-side port podman assigned for containerPort.
+// HostPort returns the host-side port assigned for logicalPort.
 func (h *Handle) HostPort(containerPort int) (int, bool) {
 	p, ok := h.hostPorts[containerPort]
 	return p, ok
 }
 
-// HostAddr returns "127.0.0.1:<hostPort>" for containerPort, the form
+// HostAddr returns the dialable address for logicalPort, in the form
 // smtpclient.ClientOptions.Address expects.
 func (h *Handle) HostAddr(containerPort int) (string, bool) {
+	if addr, ok := h.hostAddrs[containerPort]; ok {
+		return addr, true
+	}
 	p, ok := h.HostPort(containerPort)
 	if !ok {
 		return "", false
@@ -174,8 +185,30 @@ func (h *Handle) HostAddr(containerPort int) (string, bool) {
 	return fmt.Sprintf("127.0.0.1:%d", p), true
 }
 
+// NewSink returns the retrieval sink attached to this runtime. Container
+// profiles construct theirs lazily against the started Handle; in-process
+// profiles supply an already-bound sink with RuntimeConfig.
+func (h *Handle) NewSink(ctx context.Context) (Sink, error) {
+	if h == nil {
+		return nil, nil
+	}
+	if h.sink != nil {
+		return h.sink, nil
+	}
+	if h.newSink != nil {
+		return h.newSink(ctx, h)
+	}
+	return nil, nil
+}
+
 // Exec runs args inside the running container and returns its stdout.
 func (h *Handle) Exec(ctx context.Context, args ...string) ([]byte, error) {
+	if h == nil {
+		return nil, fmt.Errorf("harness: nil profile runtime does not support exec")
+	}
+	if h.podmanPath == "" {
+		return nil, fmt.Errorf("harness: profile runtime %q does not support exec", h.Name)
+	}
 	full := append([]string{"exec", h.Name}, args...)
 	stdout, stderr, err := runPodman(ctx, h.podmanPath, full...)
 	if err != nil {
@@ -184,9 +217,18 @@ func (h *Handle) Exec(ctx context.Context, args ...string) ([]byte, error) {
 	return []byte(stdout), nil
 }
 
-// Logs returns the container's combined log output, for attaching to a
-// failure diagnostic.
+// Logs returns the runtime's diagnostic output. Containers return their
+// combined Podman logs; an in-process profile may supply a callback.
 func (h *Handle) Logs(ctx context.Context) (string, error) {
+	if h == nil {
+		return "", nil
+	}
+	if h.logs != nil {
+		return h.logs(ctx)
+	}
+	if h.podmanPath == "" {
+		return "", nil
+	}
 	stdout, stderr, err := runPodman(ctx, h.podmanPath, "logs", h.Name)
 	if err != nil {
 		return "", fmt.Errorf("harness: podman logs %s: %w: %s", h.Name, err, strings.TrimSpace(stderr))
@@ -194,15 +236,25 @@ func (h *Handle) Logs(ctx context.Context) (string, error) {
 	return stdout, nil
 }
 
-// Stop removes the container, ignoring "no such container" so repeated or
-// deferred-after-explicit calls are safe.
+// Stop releases the runtime. For containers it removes the container,
+// ignoring "no such container" so repeated or deferred-after-explicit calls
+// are safe.
 func (h *Handle) Stop(ctx context.Context) error {
-	if h == nil || h.podmanPath == "" {
+	if h == nil {
 		return nil
 	}
-	_, stderr, err := runPodman(ctx, h.podmanPath, "rm", "-f", h.Name)
-	if err != nil && !strings.Contains(stderr, "no such container") {
-		return fmt.Errorf("harness: podman rm %s: %w: %s", h.Name, err, strings.TrimSpace(stderr))
-	}
-	return nil
+	h.stopOnce.Do(func() {
+		if h.stop != nil {
+			h.stopErr = h.stop(ctx)
+			return
+		}
+		if h.podmanPath == "" {
+			return
+		}
+		_, stderr, err := runPodman(ctx, h.podmanPath, "rm", "-f", h.Name)
+		if err != nil && !strings.Contains(stderr, "no such container") {
+			h.stopErr = fmt.Errorf("harness: podman rm %s: %w: %s", h.Name, err, strings.TrimSpace(stderr))
+		}
+	})
+	return h.stopErr
 }
