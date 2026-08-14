@@ -84,8 +84,8 @@ func TestATRNClosesAfterAcceptedRoleReversal(t *testing.T) {
 
 func TestLegacyMailAndRcptParameters(t *testing.T) {
 	raw, done := startFakeServer(t, []fakeStep{
-		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250-NO-SOLICITING\r\n", "250-MTRK\r\n", "250-SUBMITTER\r\n", "250-CONPERM\r\n", "250 CONNEG\r\n")},
-		{command: "MAIL FROM:<sender@example.test> SOLICIT=org.example:ADV TRANSID=abc123 SUBMITTER=alice@example.test CONPERM", replies: fakeReplies("250 sender ok\r\n")},
+		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250-DSN\r\n", "250-NO-SOLICITING\r\n", "250-MTRK\r\n", "250-SUBMITTER\r\n", "250-CONPERM\r\n", "250 CONNEG\r\n")},
+		{command: "MAIL FROM:<sender@example.test> ENVID=tracking@example.test SOLICIT=org.example:ADV MTRK=abc123 SUBMITTER=alice@example.test CONPERM", replies: fakeReplies("250 sender ok\r\n")},
 		{command: "RCPT TO:<recipient@example.test> CONNEG", replies: fakeReplies("250 recipient ok\r\n")},
 		{command: "RSET", replies: fakeReplies("250 reset\r\n")},
 		{command: "MAIL FROM:<second@example.test>", replies: fakeReplies("250 sender ok\r\n")},
@@ -95,7 +95,7 @@ func TestLegacyMailAndRcptParameters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Legacy: &smtp.LegacyOptions{
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{EnvelopeID: "tracking@example.test"}}, Legacy: &smtp.LegacyOptions{
 		Solicit: "org.example:ADV", TransitID: "abc123", Submitter: "alice@example.test", ConPerm: true,
 	}}, nil); err != nil {
 		t.Fatal(err)
@@ -125,6 +125,19 @@ func TestLegacyLocalValidation(t *testing.T) {
 	}
 	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Legacy: &smtp.LegacyOptions{ConPerm: true}}, nil); err == nil || !strings.Contains(err.Error(), "CONPERM") {
 		t.Fatalf("missing CONPERM error = %v", err)
+	}
+}
+
+func TestValidMTRKENVID(t *testing.T) {
+	for _, value := range []string{"local@example.test", "tracking@host.example"} {
+		if !validMTRKENVID(value) {
+			t.Errorf("validMTRKENVID(%q) = false", value)
+		}
+	}
+	for _, value := range []string{"", "local", "@example.test", "local@", "local@example@test"} {
+		if validMTRKENVID(value) {
+			t.Errorf("validMTRKENVID(%q) = true", value)
+		}
 	}
 }
 

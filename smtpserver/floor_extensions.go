@@ -30,6 +30,7 @@ func (s *commandSession) capabilities() []smtpwire.Extension {
 		{keyword: smtp.ExtChunking, modes: modeSetBoth, available: func(capabilityContext) bool { return s.server.chunking }},
 		{keyword: smtp.ExtBinaryMIME, modes: modeSetBoth, available: func(capabilityContext) bool { return s.server.binaryMIME && s.server.chunking }},
 	}
+	descriptors = append(descriptors, s.extensionCapabilityDescriptors()...)
 	return computeCapabilities(capabilityContext{
 		mode:          s.state.mode,
 		tls:           s.state.tls,
@@ -118,6 +119,7 @@ func backendFeatures(session *Session) backendFeatureSet {
 	if session.SCRAMCredentials != nil {
 		features |= backendSCRAM
 	}
+	features |= extensionBackendFeatures(session)
 	return features
 }
 
@@ -128,6 +130,7 @@ func (s *commandSession) mailParameterFeatures() mailParameterFeatures {
 		binaryMIME: s.server.binaryMIME && s.server.chunking,
 		smtpUTF8:   s.extended,
 		auth:       len(s.authMechanisms()) != 0,
+		extensions: s.parameterExtensionMap(),
 	}
 }
 

@@ -37,6 +37,7 @@ type mailParameterFeatures struct {
 	binaryMIME bool
 	smtpUTF8   bool
 	auth       bool
+	extensions map[smtp.Extension]string
 }
 
 func parseMailParameters(params []smtpwire.Param, features mailParameterFeatures) (*smtp.MailOptions, error) {
@@ -110,21 +111,36 @@ func parseMailParameters(params []smtpwire.Param, features mailParameterFeatures
 			opts.Auth = decoded
 			opts.AuthOriginal = &smtp.Param{Keyword: param.Keyword, Value: param.Value}
 		default:
+			handled, err := parseExtensionMailParameter(opts, param, features.extensions, seen)
+			if err != nil {
+				return nil, err
+			}
+			if handled {
+				continue
+			}
 			opts.Extra = append(opts.Extra, smtp.Param{Keyword: param.Keyword, Value: param.Value})
 		}
 	}
 	return opts, nil
 }
 
-func parseRcptParameters(params []smtpwire.Param) *smtp.RcptOptions {
+func parseRcptParameters(params []smtpwire.Param, extensions map[smtp.Extension]string) (*smtp.RcptOptions, error) {
 	if len(params) == 0 {
-		return nil
+		return nil, nil
 	}
 	opts := &smtp.RcptOptions{Extra: make([]smtp.Param, 0, len(params))}
+	seen := make(map[string]bool)
 	for _, param := range params {
+		handled, err := parseExtensionRcptParameter(opts, param, extensions, seen)
+		if err != nil {
+			return nil, err
+		}
+		if handled {
+			continue
+		}
 		opts.Extra = append(opts.Extra, smtp.Param{Keyword: param.Keyword, Value: param.Value})
 	}
-	return opts
+	return opts, nil
 }
 
 func ensureTransport(opts *smtp.MailOptions) *smtp.TransportOptions {

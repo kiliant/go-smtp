@@ -41,7 +41,7 @@ Nearly every extension RFC adds a parameter to `MAIL FROM` or `RCPT TO`:
 `SIZE=` (1870), `BODY=` (6152), `RET=`/`ENVID=`/`NOTIFY=`/`ORCPT=` (3461),
 `AUTH=` (4954), `BY=` (2852), `MT-PRIORITY=` (6710), `RRVS=` (7293),
 `REQUIRETLS` (8689), `HOLDFOR=`/`HOLDUNTIL=` (4865), `SOLICIT=` (3865),
-`TRANSID=` (3885), `SMTPUTF8` (6531).
+`MTRK=` (3885), `SMTPUTF8` (6531).
 
 This is the SMTP analogue of the IMAP FETCH-item problem, but the failure mode is
 **not** additivity. Adding a field to an options struct is already non-breaking,

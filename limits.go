@@ -12,15 +12,9 @@ import (
 // in package smtp rather than in a direction-specific package for that reason —
 // see docs/API-STABILITY.md §10.
 //
-// RFC 9422 §5 creates an IANA registry, so limit keywords will be added. The two
-// directions are not yet symmetric about them, and this is deliberate rather
-// than overlooked: a *reading* client sees an unmodelled limit in the raw
-// parameter string of the LIMITS keyword, via smtpclient.Client.Extension, so
-// nothing is lost. An *advertising* server has no way to express one — this type
-// has three uint32 fields, no Extra, and this package ships a parser with no
-// formatter. Adding either is additive (the field guard below is what makes it
-// so) and belongs to the task that gives a server something to advertise with,
-// not to a speculative field now.
+// RFC 9422 §5 creates an IANA registry, so limit keywords will be added. Extra
+// preserves limits this version does not model and lets a server advertise one
+// without waiting for a package release.
 //
 // Callers constructing a Limits literal must use keyed fields.
 type Limits struct {
@@ -30,7 +24,14 @@ type Limits struct {
 	RcptMax uint32
 	// RcptDomainMax is the RFC 9422 RCPTDOMAINMAX recipient-domain limit.
 	RcptDomainMax uint32
-	_             struct{}
+	// Extra contains open-ended RFC 9422 limit entries in their raw
+	// space-separated EHLO form, including valueless entries. A string keeps
+	// Limits comparable, preserving that property of the v1 type while allowing
+	// future registry entries.
+	// Known limits are represented by the fields above and never duplicated
+	// here by ParseLimitsParam.
+	Extra string
+	_     struct{}
 }
 
 // ParseLimitsParam parses the raw parameters from a LIMITS EHLO keyword (RFC
@@ -41,12 +42,19 @@ func ParseLimitsParam(params string) (Limits, error) {
 	if params == "" {
 		return result, nil
 	}
-	for _, field := range strings.Fields(params) {
-		name, value, ok := strings.Cut(field, "=")
-		if !ok || name == "" || value == "" || strings.Contains(value, "=") {
+	fields := strings.Fields(params)
+	if strings.Join(fields, " ") != params {
+		return Limits{}, fmt.Errorf("smtp: invalid LIMITS parameter %q", params)
+	}
+	for _, field := range fields {
+		name, value, hasValue := strings.Cut(field, "=")
+		if !validLimitName(name) || hasValue && !validLimitValue(value) {
 			return Limits{}, fmt.Errorf("smtp: invalid LIMITS parameter %q", field)
 		}
-		n := parseLimit(value)
+		n := uint32(0)
+		if hasValue {
+			n = parseLimit(value)
+		}
 		switch strings.ToUpper(name) {
 		case "MAILMAX":
 			if n != 0 {
@@ -60,9 +68,40 @@ func ParseLimitsParam(params string) (Limits, error) {
 			if n != 0 {
 				result.RcptDomainMax = n
 			}
+		default:
+			if result.Extra != "" {
+				result.Extra += " "
+			}
+			result.Extra += field
 		}
 	}
 	return result, nil
+}
+
+func validLimitName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range name {
+		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validLimitValue(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, c := range value {
+		if c >= 0x21 && c <= 0x3a || c >= 0x3c && c <= 0x7e {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func parseLimit(s string) uint32 {

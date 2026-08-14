@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"net"
 
 	"github.com/kiliant/go-smtp"
 )
@@ -69,6 +70,51 @@ type Session struct {
 	Help func(ctx context.Context, topic string, opts *HelpOptions) (string, error)
 	// ETRN implements RFC 1985 ETRN when non-nil.
 	ETRN func(ctx context.Context, domain string, opts *ETRNOptions) error
+	// ATRN implements RFC 2645 On-Demand Mail Relay when non-nil. The
+	// framework validates and authorizes the request through this callback,
+	// emits and flushes the successful 250 reply, then invokes the returned
+	// takeover callback with exclusive use of the current transport.
+	ATRN func(ctx context.Context, domains []string, opts *ATRNOptions) (*ATRNResult, error)
+
+	// ParameterExtensions declares optional ESMTP capabilities whose semantics
+	// are carried entirely by MAIL/RCPT parameters. Unknown parameters remain
+	// available through smtp.MailOptions.Extra and smtp.RcptOptions.Extra, so a
+	// backend can enable a future parameter extension before this framework
+	// models it with typed fields.
+	ParameterExtensions []ParameterExtension
+	// Limits declares the RFC 9422 LIMITS capability. Nil omits it.
+	Limits *smtp.Limits
+
+	_ struct{}
+}
+
+// ParameterExtension declares one open-ended EHLO capability whose wire
+// semantics are carried by MAIL FROM or RCPT TO parameters. Keyword is an
+// smtp.Extension rather than a closed enum; Params is the raw EHLO parameter
+// text following the keyword. Command extensions need a dedicated Session
+// callback and must not be declared through this type.
+//
+// Callers constructing a ParameterExtension literal must use keyed fields.
+type ParameterExtension struct {
+	// Keyword is the upper-case EHLO keyword.
+	Keyword smtp.Extension
+	// Params is the optional raw EHLO parameter text, without CRLF framing.
+	Params string
+
+	_ struct{}
+}
+
+// ATRNResult is an authoritative successful RFC 2645 ATRN decision. Takeover
+// is required: after the framework flushes the 250 reply it receives exclusive
+// protocol use of Conn until it returns. A typical callback constructs an
+// smtpclient.Client on Conn through the client's connection-injection API.
+//
+// Callers constructing an ATRNResult literal must use keyed fields.
+type ATRNResult struct {
+	// Takeover drives the provider-as-client half of the reversed connection.
+	// The framework retains shutdown cancellation and closes the transport
+	// after Takeover returns. Takeover must not retain conn after returning.
+	Takeover func(ctx context.Context, conn net.Conn, opts *ATRNTakeoverOptions) error
 
 	_ struct{}
 }
@@ -201,9 +247,19 @@ type SCRAMKeys struct {
 // Callers constructing a MailOptions literal must use keyed fields.
 type MailOptions struct{ _ struct{} }
 
-// RcptOptions controls one Session.Rcpt call. Nil means defaults.
+// RcptOptions controls one Session.Rcpt call. The framework supplies a
+// non-nil value. A backend may append success continuation lines for an
+// extension such as RFC 4141 CONNEG; each line is emitted under the normal
+// 250 reply after the framework's recipient-accepted first line.
 // Callers constructing a RcptOptions literal must use keyed fields.
-type RcptOptions struct{ _ struct{} }
+type RcptOptions struct {
+	// SuccessLines contains extension-specific successful RCPT reply lines.
+	// Lines must not contain CR, LF, or NUL. The slice is
+	// open-ended so a future reply-bearing RCPT extension can use this seam.
+	SuccessLines []string
+
+	_ struct{}
+}
 
 // DataOptions controls one Session.Data call. Nil means defaults.
 // Callers constructing a DataOptions literal must use keyed fields.
@@ -250,3 +306,13 @@ type HelpOptions struct{ _ struct{} }
 // ETRNOptions controls one Session.ETRN call. Nil means defaults.
 // Callers constructing an ETRNOptions literal must use keyed fields.
 type ETRNOptions struct{ _ struct{} }
+
+// ATRNOptions controls one Session.ATRN authorization and queue decision.
+// Nil means defaults.
+// Callers constructing an ATRNOptions literal must use keyed fields.
+type ATRNOptions struct{ _ struct{} }
+
+// ATRNTakeoverOptions controls one successful ATRNResult.Takeover call. Nil
+// means defaults.
+// Callers constructing an ATRNTakeoverOptions literal must use keyed fields.
+type ATRNTakeoverOptions struct{ _ struct{} }
