@@ -149,14 +149,21 @@ func startPostfixSender(t *testing.T, ctx context.Context, transport, destinatio
 		"POSTFIX_relayhost":                    "[" + host + "]:" + port,
 		"POSTFIX_smtpd_recipient_restrictions": "permit_mynetworks,reject_unauth_destination",
 		"POSTFIX_smtpd_relay_restrictions":     "permit_mynetworks,reject_unauth_destination",
-		"POSTFIX_smtp_tls_security_level":      "none",
-		// Postfix's own DNS client tries AAAA before A and, on at least one
-		// CI runner's rootless Podman network, gets a hard resolver error
-		// for host.containers.internal's AAAA record rather than an empty
-		// answer — it then gives up instead of falling back to A. Nothing in
-		// this harness uses IPv6, so pin Postfix to IPv4-only lookups rather
-		// than depend on how a given Podman network resolves the alias.
+		"POSTFIX_smtp_tls_security_level": "none",
+		// Nothing here uses IPv6.
 		"POSTFIX_inet_protocols": "ipv4",
+		// Postfix's own SMTP client resolver is DNS-only by default
+		// (smtp_host_lookup = dns) and, unlike a normal getaddrinfo/NSS
+		// lookup, never consults /etc/hosts. Podman registers
+		// host.containers.internal only as an /etc/hosts entry in the
+		// sender container, not as an actual DNS record, so the relayhost
+		// lookup fails outright on at least one CI runner's Podman network
+		// ('Host or domain name not found... type=A: Host not found') even
+		// though the alias resolves fine there for every ordinary consumer,
+		// Exim's byname lookup among them — that's why only the Postfix
+		// senders were affected. dns,native tries real DNS first and falls
+		// back to the native resolver, which does read /etc/hosts.
+		"POSTFIX_smtp_host_lookup": "dns, native",
 	}
 	if transport == "lmtp" {
 		env["POSTFIX_default_transport"] = "lmtp"
