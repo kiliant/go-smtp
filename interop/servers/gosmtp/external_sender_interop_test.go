@@ -149,7 +149,7 @@ func startPostfixSender(t *testing.T, ctx context.Context, transport, destinatio
 		"POSTFIX_relayhost":                    "[" + host + "]:" + port,
 		"POSTFIX_smtpd_recipient_restrictions": "permit_mynetworks,reject_unauth_destination",
 		"POSTFIX_smtpd_relay_restrictions":     "permit_mynetworks,reject_unauth_destination",
-		"POSTFIX_smtp_tls_security_level": "none",
+		"POSTFIX_smtp_tls_security_level":      "none",
 		// Nothing here uses IPv6.
 		"POSTFIX_inet_protocols": "ipv4",
 		// Postfix's own SMTP client resolver is DNS-only by default
