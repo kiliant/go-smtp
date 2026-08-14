@@ -18,12 +18,15 @@ type commandAction struct {
 
 type commandExecutor func(context.Context, smtpwire.Command, *smtpwire.LineReader, *bufio.Writer) (commandAction, error)
 
+type commandReadErrorHandler func(error) (commandAction, bool, error)
+
 type commandLoop struct {
 	reader       *smtpwire.LineReader
 	writer       *bufio.Writer
 	limits       smtpwire.Limits
 	readDeadline func() time.Time
 	execute      commandExecutor
+	readError    commandReadErrorHandler
 }
 
 func (loop *commandLoop) run(ctx context.Context) error {
@@ -48,6 +51,23 @@ func (loop *commandLoop) run(ctx context.Context) error {
 			return nil
 		}
 		if err != nil {
+			if loop.readError != nil {
+				action, handled, handleErr := loop.readError(err)
+				if handleErr != nil {
+					return handleErr
+				}
+				if handled {
+					if action.synchronizationPoint || action.closeConnection {
+						if err := loop.writer.Flush(); err != nil {
+							return fmt.Errorf("smtpserver: flush command reply: %w", err)
+						}
+					}
+					if action.closeConnection {
+						return nil
+					}
+					continue
+				}
+			}
 			return fmt.Errorf("smtpserver: read command: %w", err)
 		}
 		action, err := loop.execute(ctx, command, loop.reader, loop.writer)

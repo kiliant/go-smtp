@@ -15,11 +15,13 @@ import (
 )
 
 const (
-	defaultMaxConnections  = 1000
-	defaultMaxMessageBytes = 64 << 20
-	defaultMaxRecipients   = 100
-	defaultCommandTimeout  = 5 * time.Minute
-	defaultDataTimeout     = 10 * time.Minute
+	defaultMaxConnections          = 1000
+	defaultMaxConnectionsPerSource = 32
+	defaultMaxMessageBytes         = 64 << 20
+	defaultMaxRecipients           = 100
+	defaultMaxTransactions         = 100
+	defaultCommandTimeout          = 5 * time.Minute
+	defaultDataTimeout             = 10 * time.Minute
 )
 
 var defaultAuthMechanismsAfterTLS = []string{
@@ -73,6 +75,10 @@ type ServerOptions struct {
 	// MaxConnections bounds live connections in this Server. Zero uses a safe
 	// default of 1000; it never means unbounded.
 	MaxConnections int
+	// MaxConnectionsPerSource bounds live connections from one source address.
+	// Zero uses a safe default of 32; it never means unbounded. IP addresses are
+	// matched exactly after canonicalisation, without DNS or subnet grouping.
+	MaxConnectionsPerSource int
 	// GreetingIdentity is the RFC 5321 domain or address-literal used in the
 	// greeting, EHLO/LHLO replies and Received fields. Empty uses the local
 	// hostname, falling back to localhost.
@@ -92,6 +98,10 @@ type ServerOptions struct {
 	// duplicates. Zero uses 100; a non-zero value below RFC 5321's required
 	// minimum of 100 is invalid.
 	MaxRecipients int
+	// MaxTransactions bounds MAIL commands per connection, including commands
+	// rejected for syntax, state, policy or by the backend. Zero uses 100. The
+	// maximum is RFC 9422's six-digit MAILMAX limit, 999999.
+	MaxTransactions int
 	// RequireTLS rejects MAIL until the connection is TLS-protected. This is
 	// listener policy and is distinct from RFC 8689's per-message REQUIRETLS.
 	RequireTLS bool
@@ -118,25 +128,26 @@ type ServerOptions struct {
 // Server owns one SMTP or LMTP listener, its active connections and its bounded
 // CHUNKING spool budget. Construct one with NewServer.
 type Server struct {
-	listener    net.Listener
-	backend     *Backend
-	mode        listenerMode
-	tlsConfig   *tls.Config
-	implicitTLS bool
-	spools      *spoolManager
-	chunking    bool
-	binaryMIME  bool
-	connections *connectionRegistry
-	trace       func(smtp.TraceEvent)
-	errorLog    func(ErrorEvent)
-	identity    string
-	timeouts    serverTimeouts
-	maxMessage  int64
-	maxRcpt     int
-	requireTLS  bool
-	requireAuth bool
-	authBefore  []string
-	authAfter   []string
+	listener        net.Listener
+	backend         *Backend
+	mode            listenerMode
+	tlsConfig       *tls.Config
+	implicitTLS     bool
+	spools          *spoolManager
+	chunking        bool
+	binaryMIME      bool
+	connections     *connectionRegistry
+	trace           func(smtp.TraceEvent)
+	errorLog        func(ErrorEvent)
+	identity        string
+	timeouts        serverTimeouts
+	maxMessage      int64
+	maxRcpt         int
+	maxTransactions int
+	requireTLS      bool
+	requireAuth     bool
+	authBefore      []string
+	authAfter       []string
 
 	shutdownOnce sync.Once
 	shutdownErr  error
@@ -155,6 +166,9 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 	if value.MaxConnections == 0 {
 		value.MaxConnections = defaultMaxConnections
 	}
+	if value.MaxConnectionsPerSource == 0 {
+		value.MaxConnectionsPerSource = defaultMaxConnectionsPerSource
+	}
 	if value.GreetingIdentity == "" {
 		value.GreetingIdentity = localHostname()
 	}
@@ -170,6 +184,9 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 	}
 	if value.MaxRecipients == 0 {
 		value.MaxRecipients = defaultMaxRecipients
+	}
+	if value.MaxTransactions == 0 {
+		value.MaxTransactions = defaultMaxTransactions
 	}
 	if value.AuthMechanismsBeforeTLS == nil {
 		value.AuthMechanismsBeforeTLS = []string{}
@@ -199,6 +216,7 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 		dataTimeout:         value.DataTimeout,
 		maxMessageBytes:     value.MaxMessageBytes,
 		maxRecipients:       value.MaxRecipients,
+		maxTransactions:     value.MaxTransactions,
 		authBefore:          value.AuthMechanismsBeforeTLS,
 		authAfter:           value.AuthMechanismsAfterTLS,
 	}
@@ -228,6 +246,13 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 			err = errors.New("smtpserver: invalid server options: MaxConnections must not be negative")
 		} else {
 			err = errors.New(err.Error() + "; MaxConnections must not be negative")
+		}
+	}
+	if value.MaxConnectionsPerSource < 0 {
+		if err == nil {
+			err = errors.New("smtpserver: invalid server options: MaxConnectionsPerSource must not be negative")
+		} else {
+			err = errors.New(err.Error() + "; MaxConnectionsPerSource must not be negative")
 		}
 	}
 	if value.EnableCHUNKING && value.MaxSpoolBytes > 0 && value.MaxMessageBytes > value.MaxSpoolBytes {
@@ -260,25 +285,26 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 		tlsConfig = value.TLSConfig.Clone()
 	}
 	return &Server{
-		listener:    value.Listener,
-		backend:     value.Backend,
-		mode:        mode,
-		tlsConfig:   tlsConfig,
-		implicitTLS: value.ImplicitTLS,
-		spools:      spools,
-		chunking:    value.EnableCHUNKING,
-		binaryMIME:  value.EnableBINARYMIME,
-		connections: newConnectionRegistry(value.MaxConnections),
-		trace:       value.Trace,
-		errorLog:    value.ErrorLog,
-		identity:    value.GreetingIdentity,
-		timeouts:    serverTimeouts{command: value.CommandTimeout, data: value.DataTimeout},
-		maxMessage:  value.MaxMessageBytes,
-		maxRcpt:     value.MaxRecipients,
-		requireTLS:  value.RequireTLS,
-		requireAuth: value.RequireAuth,
-		authBefore:  value.AuthMechanismsBeforeTLS,
-		authAfter:   value.AuthMechanismsAfterTLS,
+		listener:        value.Listener,
+		backend:         value.Backend,
+		mode:            mode,
+		tlsConfig:       tlsConfig,
+		implicitTLS:     value.ImplicitTLS,
+		spools:          spools,
+		chunking:        value.EnableCHUNKING,
+		binaryMIME:      value.EnableBINARYMIME,
+		connections:     newConnectionRegistry(value.MaxConnections, value.MaxConnectionsPerSource),
+		trace:           value.Trace,
+		errorLog:        value.ErrorLog,
+		identity:        value.GreetingIdentity,
+		timeouts:        serverTimeouts{command: value.CommandTimeout, data: value.DataTimeout},
+		maxMessage:      value.MaxMessageBytes,
+		maxRcpt:         value.MaxRecipients,
+		maxTransactions: value.MaxTransactions,
+		requireTLS:      value.RequireTLS,
+		requireAuth:     value.RequireAuth,
+		authBefore:      value.AuthMechanismsBeforeTLS,
+		authAfter:       value.AuthMechanismsAfterTLS,
 	}, nil
 }
 

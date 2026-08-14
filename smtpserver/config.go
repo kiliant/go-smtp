@@ -25,6 +25,7 @@ type constructionConfig struct {
 	dataTimeout         time.Duration
 	maxMessageBytes     int64
 	maxRecipients       int
+	maxTransactions     int
 	authBefore          []string
 	authAfter           []string
 }
@@ -57,6 +58,9 @@ func validateConstruction(config constructionConfig) error {
 	}
 	if config.maxRecipients < 100 {
 		problems = append(problems, "MaxRecipients must be at least 100")
+	}
+	if config.maxTransactions < 0 || config.maxTransactions > 999999 {
+		problems = append(problems, "MaxTransactions must be between 0 and 999999")
 	}
 	problems = append(problems, validateAuthMechanisms("AuthMechanismsBeforeTLS", config.authBefore)...)
 	problems = append(problems, validateAuthMechanisms("AuthMechanismsAfterTLS", config.authAfter)...)

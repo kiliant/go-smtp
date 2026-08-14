@@ -56,7 +56,8 @@ func (s *Server) Serve(ctx context.Context, opts *ServeOptions) error {
 			return fmt.Errorf("smtpserver: accept: %w", err)
 		}
 		connectionCtx, cancel := context.WithCancel(ctx)
-		if !s.connections.register(conn, cancel) {
+		source := connectionSourceForAddr(conn.RemoteAddr())
+		if !s.connections.register(conn, cancel, source) {
 			cancel()
 			writeConnectionLimit(conn)
 			_ = conn.Close()
@@ -200,18 +201,31 @@ func publicMode(mode listenerMode) Mode {
 func newCommandSession(server *Server, ctx context.Context, raw, transport net.Conn, tlsState *connectionTLSState, info *ConnInfo, backend *Session) *commandSession {
 	reader := smtpwire.NewLineReader(transport)
 	writer := bufio.NewWriter(transport)
+	effectiveMaxTransactions := server.maxTransactions
+	effectiveBackend := backend
+	if backend.Limits != nil {
+		backendCopy := *backend
+		limitsCopy := *backend.Limits
+		if limitsCopy.MailMax != 0 && int(limitsCopy.MailMax) < effectiveMaxTransactions {
+			effectiveMaxTransactions = int(limitsCopy.MailMax)
+		}
+		limitsCopy.MailMax = uint32(effectiveMaxTransactions)
+		backendCopy.Limits = &limitsCopy
+		effectiveBackend = &backendCopy
+	}
 	session := &commandSession{
-		server:    server,
-		ctx:       ctx,
-		raw:       raw,
-		transport: transport,
-		tlsState:  tlsState,
-		info:      info,
-		backend:   backend,
-		lifecycle: newSessionLifecycle(backend),
-		state:     newProtocolState(server.mode),
-		reader:    reader,
-		writer:    writer,
+		server:          server,
+		ctx:             ctx,
+		raw:             raw,
+		transport:       transport,
+		tlsState:        tlsState,
+		info:            info,
+		backend:         effectiveBackend,
+		lifecycle:       newSessionLifecycle(effectiveBackend),
+		state:           newProtocolState(server.mode),
+		reader:          reader,
+		writer:          writer,
+		maxTransactions: effectiveMaxTransactions,
 	}
 	if tlsState.get() != nil {
 		session.state.tls = true
@@ -223,6 +237,7 @@ func newCommandSession(server *Server, ctx context.Context, raw, transport net.C
 		limits:       limits,
 		readDeadline: func() time.Time { return session.deadline(server.timeouts.command) },
 		execute:      session.execute,
+		readError:    session.handleCommandReadError,
 	}
 	return session
 }

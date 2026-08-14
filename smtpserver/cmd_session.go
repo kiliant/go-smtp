@@ -27,10 +27,12 @@ type commandSession struct {
 	writer    *bufio.Writer
 	loop      commandLoop
 
-	extended   bool
-	smtpUTF8   bool
-	binaryMIME bool
-	recipients []string
+	extended        bool
+	smtpUTF8        bool
+	binaryMIME      bool
+	recipients      []string
+	mailAttempts    int
+	maxTransactions int
 }
 
 func (s *commandSession) deadline(timeout time.Duration) time.Time {
@@ -52,9 +54,41 @@ func (s *commandSession) close() {
 	_ = s.state.transition(eventClose)
 }
 
+func (s *commandSession) handleCommandReadError(cause error) (commandAction, bool, error) {
+	if s.lifecycle.spool == nil || !isFramedCommandSyntaxError(cause) {
+		return commandAction{}, false, nil
+	}
+
+	ctx, cancel := s.commandContext(s.server.timeouts.command)
+	s.lifecycle.resetIfOpen(ctx, ResetFailed)
+	cancel()
+	if err := s.state.transition(eventBDATFailed); err != nil {
+		return commandAction{}, true, err
+	}
+	if err := s.writeReply(wireReply{code: 500, enhanced: smtp.EnhancedCode{Class: 5, Subject: 5, Detail: 2}, text: "Command syntax error after BDAT"}); err != nil {
+		return commandAction{}, true, err
+	}
+	return commandAction{synchronizationPoint: true}, true, nil
+}
+
+func isFramedCommandSyntaxError(err error) bool {
+	return errors.Is(err, smtpwire.ErrCommandEmpty) ||
+		errors.Is(err, smtpwire.ErrCommandVerbSyntax) ||
+		errors.Is(err, smtpwire.ErrCommandArgumentControl)
+}
+
 func (s *commandSession) execute(ctx context.Context, command smtpwire.Command, _ *smtpwire.LineReader, _ *bufio.Writer) (commandAction, error) {
 	verb := strings.ToUpper(command.Verb)
 	s.traceCommand(verb, command.Argument)
+	if verb == "MAIL" {
+		s.mailAttempts++
+		if s.mailAttempts > s.maxTransactions {
+			if err := s.writeReply(wireReply{code: 421, enhanced: smtp.EnhancedCode{Class: 4, Subject: 7, Detail: 0}, text: "Transaction limit reached"}); err != nil {
+				return commandAction{}, err
+			}
+			return commandAction{synchronizationPoint: true, closeConnection: true}, nil
+		}
+	}
 	legality := s.state.legality(verb)
 	switch legality {
 	case commandUnknown:

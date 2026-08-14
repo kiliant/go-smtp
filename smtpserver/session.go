@@ -82,7 +82,12 @@ type Session struct {
 	// backend can enable a future parameter extension before this framework
 	// models it with typed fields.
 	ParameterExtensions []ParameterExtension
-	// Limits declares the RFC 9422 LIMITS capability. Nil omits it.
+	// Limits declares the RFC 9422 LIMITS capability. Nil omits it while the
+	// server's transaction bound remains enforced. For a non-nil value, the
+	// framework shallow-copies the declaration and advertises MAILMAX as the
+	// lower non-zero value of Limits.MailMax and ServerOptions.MaxTransactions;
+	// a zero MailMax inherits the server bound. Other fields and Extra are
+	// preserved, and the backend-owned value is never mutated.
 	Limits *smtp.Limits
 
 	_ struct{}

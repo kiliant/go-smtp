@@ -9,12 +9,12 @@ import (
 )
 
 func TestConnectionRegistryShutdownCancelsAndWaits(t *testing.T) {
-	registry := newConnectionRegistry()
+	registry := newConnectionRegistry(1000, 32)
 	server, client := net.Pipe()
 	defer server.Close()
 	defer client.Close()
 	connectionContext, cancel := context.WithCancel(context.Background())
-	if !registry.register(server, cancel) {
+	if !registry.register(server, cancel, unknownConnectionSource) {
 		t.Fatal("initial registration refused")
 	}
 
@@ -34,16 +34,16 @@ func TestConnectionRegistryShutdownCancelsAndWaits(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if registry.register(client, func() {}) {
+	if registry.register(client, func() {}, unknownConnectionSource) {
 		t.Fatal("registration succeeded after shutdown began")
 	}
 }
 
 func TestConnectionRegistryShutdownDeadlineForceCloses(t *testing.T) {
-	registry := newConnectionRegistry()
+	registry := newConnectionRegistry(1000, 32)
 	server, client := net.Pipe()
 	defer client.Close()
-	if !registry.register(server, func() {}) {
+	if !registry.register(server, func() {}, unknownConnectionSource) {
 		t.Fatal("registration refused")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -59,13 +59,13 @@ func TestConnectionRegistryShutdownDeadlineForceCloses(t *testing.T) {
 }
 
 func TestConnectionRegistriesAreInstanceScoped(t *testing.T) {
-	first := newConnectionRegistry()
-	second := newConnectionRegistry()
+	first := newConnectionRegistry(1000, 32)
+	second := newConnectionRegistry(1000, 32)
 	firstServer, firstClient := net.Pipe()
 	secondServer, secondClient := net.Pipe()
 	defer firstClient.Close()
 	defer secondClient.Close()
-	if !first.register(firstServer, func() {}) || !second.register(secondServer, func() {}) {
+	if !first.register(firstServer, func() {}, unknownConnectionSource) || !second.register(secondServer, func() {}, unknownConnectionSource) {
 		t.Fatal("registration refused")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -92,21 +92,21 @@ func TestConnectionRegistriesAreInstanceScoped(t *testing.T) {
 }
 
 func TestConnectionRegistryEnforcesInstanceLimit(t *testing.T) {
-	registry := newConnectionRegistry(1)
+	registry := newConnectionRegistry(1, 32)
 	firstServer, firstClient := net.Pipe()
 	secondServer, secondClient := net.Pipe()
 	defer firstServer.Close()
 	defer firstClient.Close()
 	defer secondServer.Close()
 	defer secondClient.Close()
-	if !registry.register(firstServer, func() {}) {
+	if !registry.register(firstServer, func() {}, unknownConnectionSource) {
 		t.Fatal("first registration refused")
 	}
-	if registry.register(secondServer, func() {}) {
+	if registry.register(secondServer, func() {}, unknownConnectionSource) {
 		t.Fatal("second registration exceeded the instance limit")
 	}
 	registry.unregister(firstServer)
-	if !registry.register(secondServer, func() {}) {
+	if !registry.register(secondServer, func() {}, unknownConnectionSource) {
 		t.Fatal("registration remained blocked after release")
 	}
 	registry.unregister(secondServer)
