@@ -24,11 +24,27 @@ fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/go-smtp-apidiff.XXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT
-mkdir "$tmp/old"
+mkdir "$tmp/old" "$tmp/new"
 git archive "$baseline" | tar -x -C "$tmp/old"
+# A plain copy, not another git archive: this must see uncommitted local
+# changes too, the same way the rest of this gate's output does when a
+# developer runs it before committing.
+rsync -a --exclude=.git --exclude=.state --exclude=interop -- ./ "$tmp/new/"
+
+# interop/** is dropped from both snapshots before apidiff ever sees them.
+# It is harness/test tooling housed inside this module's directory tree, not
+# the released API this gate protects, and at least one profile
+# (interop/servers/gosmtp) has an ordinary, non-test-file import of the
+# nested smtpserver module — resolvable in normal builds only via the
+# repository's go.work, which this gate deliberately runs with GOWORK=off to
+# see the module the way a real consumer without that workspace file would.
+# Removing interop/** from the copies given to apidiff -m sidesteps that
+# entirely rather than trying to teach apidiff a package exclusion it has no
+# flag for.
+rm -rf "$tmp/old/interop"
 
 (cd "$tmp/old" && GOWORK=off apidiff -m -w "$tmp/old.export" "$module")
-GOWORK=off apidiff -m -w "$tmp/new.export" "$module"
+(cd "$tmp/new" && GOWORK=off apidiff -m -w "$tmp/new.export" "$module")
 apidiff -m "$tmp/old.export" "$tmp/new.export" >"$tmp/all.txt"
 apidiff -m -incompatible "$tmp/old.export" "$tmp/new.export" >"$tmp/incompatible.txt"
 
