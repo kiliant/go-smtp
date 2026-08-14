@@ -168,6 +168,13 @@ func startPostfixSender(t *testing.T, ctx context.Context, transport, destinatio
 	if transport == "lmtp" {
 		env["POSTFIX_default_transport"] = "lmtp"
 		env["POSTFIX_relay_transport"] = "lmtp"
+		// The lmtp delivery agent is a separate Postfix service from smtp
+		// and has its own independent host-lookup setting; smtp_host_lookup
+		// above does not apply to it. Confirmed live in CI: with only
+		// smtp_host_lookup set, TestPostfixRelaysToGoSMTP (smtp agent)
+		// passed while this LMTP case still bounced on the identical
+		// unresolved-host.containers.internal symptom.
+		env["POSTFIX_lmtp_host_lookup"] = "dns, native"
 	}
 	handle, err := harness.Run(ctx, harness.RunConfig{
 		Name:  harness.ContainerName("gosmtp-postfix-" + transport),
