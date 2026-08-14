@@ -7,7 +7,7 @@ package smtp
 // every ESMTP extension RFC adds a MAIL/RCPT parameter — SIZE= (RFC 1870),
 // BODY= (RFC 6152), RET=/ENVID=/NOTIFY=/ORCPT= (RFC 3461), AUTH= (RFC 4954),
 // BY= (RFC 2852), MT-PRIORITY= (RFC 6710), RRVS= (RFC 7293), REQUIRETLS (RFC
-// 8689), HOLDFOR=/HOLDUNTIL= (RFC 4865), SOLICIT= (RFC 3865), TRANSID= (RFC
+// 8689), HOLDFOR=/HOLDUNTIL= (RFC 4865), SOLICIT= (RFC 3865), MTRK= (RFC
 // 3885), SMTPUTF8 (RFC 6531) — and a caller who needs a parameter this
 // library has not modelled yet with a typed options field must still be able
 // to send it. Options structs throughout smtpclient carry typed fields for

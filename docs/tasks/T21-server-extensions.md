@@ -26,9 +26,12 @@ framework parses and validates syntax, the backend decides*. That means:
   and the backend never sees a field it cannot know is meaningless.
 - The typed field is the **existing** `smtp.MailOptions` / `smtp.RcptOptions`
   field. T16 made those structs direction-neutral for exactly this reason
-  (`API-STABILITY.md` §10), so this task adds **no** new vocabulary to
-  `package smtp`. If it feels like it needs to, that is a finding: record it and
-  stop, because after the v1.0 tag reshaping those types is a v2.
+  (`API-STABILITY.md` §10), so this task adds no direct fields to either one.
+  T21's receive-side audit did activate three additions T16 deliberately left
+  for the first server producer: exact-xtext companions on the guarded nested
+  option structs, `DeliverByOptions.Trace`, and the open `Limits.Extra` registry
+  escape hatch. Those are additive completions of already-shared vocabulary,
+  not a second receive-side model.
 
 ## The rows
 
@@ -42,7 +45,7 @@ framework parses and validates syntax, the backend decides*. That means:
 | `FUTURERELEASE` | 4865 | `DeliveryOptions.FutureRelease` | `HOLDFOR`/`HOLDUNTIL` are mutually exclusive. RFC 4865, **not** 6729 — a registry scrape got this wrong during this repo's setup |
 | `RRVS` | 7293 | `RecipientDeliveryOptions.RRVS` | `RCPT` only. T16 removed the sender-level field and `TestAPISurfaceNoSenderLevelRRVS` keeps it removed; a server-side parser must never look for one on `MAIL` |
 | `BINARYMIME` | 3030 | `TransportOptions.Body` | requires `CHUNKING`; T18's `NewServer` refuses to start otherwise |
-| group C | 3865, 3885, 4405, 4141 | `LegacyOptions`, `RecipientLegacyOptions` | `SOLICIT=`, `TRANSID=`, `SUBMITTER=`, `CONPERM`, `CONNEG` |
+| group C | 3865, 3885, 4405, 4141 | `LegacyOptions`, `RecipientLegacyOptions` | `SOLICIT=`, `MTRK=`, `SUBMITTER=`, `CONPERM`, `CONNEG` |
 
 `docs/RFC-COVERAGE.md` is the authoritative keyword→RFC mapping and **the source
 for every number above**. Do not add a row from memory; if a keyword is missing,
@@ -101,9 +104,9 @@ It is also the only row here that needs design before code:
   test drives the unadvertised case to `501` for each one.
 - No field is populated for an unadvertised extension — T18's declaration test
   covers the mechanism; this task's job is to have no exceptions.
-- `smtp.MailOptions` / `smtp.RcptOptions` gained **nothing**. A diff against the
-  root module showing zero changes to `package smtp` is the deliverable here, and
-  `apidiff` is how it is demonstrated.
+- `smtp.MailOptions` / `smtp.RcptOptions` gained **nothing** directly. The
+  additive guarded companion fields described above are reviewed with
+  `apidiff`; the deliverable is zero incompatible root-module changes.
 - Malformed values are `501` naming the parameter, with a fuzz target per parser
   (landed here, owned by T11/T22 afterwards, per `BOARD.md`'s created-by/owned-by
   table).

@@ -16,7 +16,7 @@ the client.** Full command support is best-effort, and several rows will stay
 | ETRN | 1985 | implement — queue-start command, still deployed |
 | ATRN | 2645 | implement — authenticated TURN / ODMR |
 | NO-SOLICITING | 3865 | implement `SOLICIT=` parameter |
-| MTRK | 3885 | implement `TRANSID=` parameter |
+| MTRK | 3885 | implement `MTRK=` certifier and optional timeout parameter |
 | SUBMITTER | 4405 | implement `SUBMITTER=` parameter |
 | CONPERM | 4141 | implement — content conversion permission |
 | CONNEG | 4141 | implement — content negotiation |

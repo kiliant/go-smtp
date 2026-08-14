@@ -34,6 +34,7 @@ var (
 	_ smtp.TraceEvent     = TraceEvent{}
 	_ TraceDirection      = smtp.TraceSent
 	_ smtp.TraceDirection = TraceReceived
+	_                     = smtp.Limits{} == smtp.Limits{}
 
 	// The trace hook field is the shape a caller actually writes, and the one
 	// apidiff flagged: a hook declared with the package smtp spelling must

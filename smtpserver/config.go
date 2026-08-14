@@ -130,6 +130,7 @@ func validateSession(session *Session) error {
 	if (session.Authenticate != nil || session.ChallengeResponse != nil || session.SCRAMCredentials != nil) && session.CommitAuth == nil {
 		problems = append(problems, "Session.CommitAuth is required when authentication verification is configured")
 	}
+	problems = append(problems, validateExtensionSession(session)...)
 	if len(problems) != 0 {
 		return errors.New("smtpserver: invalid backend session: " + joinProblems(problems))
 	}

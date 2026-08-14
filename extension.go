@@ -95,7 +95,7 @@ const (
 	ExtATRN Extension = "ATRN"
 	// ExtNoSoliciting is NO-SOLICITING, the SOLICIT= parameter (RFC 3865).
 	ExtNoSoliciting Extension = "NO-SOLICITING"
-	// ExtMTRK is MTRK, the TRANSID= parameter (RFC 3885).
+	// ExtMTRK is MTRK, including the MTRK= parameter (RFC 3885).
 	ExtMTRK Extension = "MTRK"
 	// ExtSubmitter is SUBMITTER, the SUBMITTER= parameter (RFC 4405).
 	ExtSubmitter Extension = "SUBMITTER"

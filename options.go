@@ -182,7 +182,10 @@ type DSNMailOptions struct {
 	Return DSNReturn
 	// EnvelopeID is xtext-encoded as the RFC 3461 ENVID= value.
 	EnvelopeID string
-	_          struct{}
+	// EnvelopeIDOriginal preserves the exact received ENVID parameter,
+	// including keyword case and xtext spelling. It is ignored when sending.
+	EnvelopeIDOriginal *Param
+	_                  struct{}
 }
 
 // DSNRcptOptions configures RFC 3461 DSN recipient parameters.
@@ -195,7 +198,10 @@ type DSNRcptOptions struct {
 	OriginalType string
 	// Original is xtext-encoded as the ORCPT address value.
 	Original string
-	_        struct{}
+	// ORCPTOriginal preserves the exact received ORCPT parameter, including
+	// keyword case and xtext spelling. It is ignored when sending.
+	ORCPTOriginal *Param
+	_             struct{}
 }
 
 // DeliverByOptions configures the RFC 2852 DELIVERBY BY= parameter.
@@ -207,7 +213,9 @@ type DeliverByOptions struct {
 	Seconds int64
 	// Mode is the required RFC 2852 by-mode: "N" or "R".
 	Mode string
-	_    struct{}
+	// Trace requests RFC 2852's optional by-trace "T" modifier.
+	Trace bool
+	_     struct{}
 }
 
 // FutureReleaseOptions configures RFC 4865 mutually exclusive HOLDFOR and
@@ -240,10 +248,14 @@ type RRVSOptions struct {
 type LegacyOptions struct {
 	// Solicit is the RFC 3865 SOLICIT= value.
 	Solicit string
-	// TransitID is the RFC 3885 TRANSID= value.
+	// TransitID is the RFC 3885 MTRK= certifier and optional timeout. The
+	// historical field name is retained for source compatibility.
 	TransitID string
 	// Submitter is the RFC 4405 SUBMITTER= value.
 	Submitter string
+	// SubmitterOriginal preserves the exact received SUBMITTER parameter,
+	// including keyword case and xtext spelling. It is ignored when sending.
+	SubmitterOriginal *Param
 	// ConPerm requests RFC 4141 CONPERM.
 	ConPerm bool
 	_       struct{}

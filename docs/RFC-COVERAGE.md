@@ -102,16 +102,16 @@ The extensions that change how message content itself is transmitted.
 
 Extensions that add `MAIL`/`RCPT` parameters influencing handling.
 
-| Capability | RFC | Status |
-|---|---|---|
-| DSN | 3461 | done |
-| DELIVERBY | 2852 | done |
-| FUTURERELEASE | 4865 | done |
-| MT-PRIORITY | 6710 | done |
-| RRVS | 7293 | done |
-| REQUIRETLS | 8689 | done [^requiretls] |
-| LIMITS | 9422 | done |
-| BURL | 4468 | done |
+| Capability | RFC | Client status | Server status |
+|---|---|---|---|
+| DSN | 3461 | done | done (T21) |
+| DELIVERBY | 2852 | done | done (T21) |
+| FUTURERELEASE | 4865 | done | done (T21) |
+| MT-PRIORITY | 6710 | done | done (T21) |
+| RRVS | 7293 | done | done (T21) |
+| REQUIRETLS | 8689 | done [^requiretls] | done (T21) |
+| LIMITS | 9422 | done | done (T21) |
+| BURL | 4468 | done | — |
 
 [^requiretls]: RFC 8689 §2 requires that `REQUIRETLS` "MUST only be specified
     in the context of an SMTP session meeting the security requirements of
@@ -132,22 +132,27 @@ Extensions that add `MAIL`/`RCPT` parameters influencing handling.
 Implement the parse path so an EHLO reply advertising these does not break the
 client; full command support is best-effort. Several will stay `deferred`.
 
-| Capability | RFC | Status | Note |
-|---|---|---|---|
-| ETRN | 1985 | done | queue-start command |
-| ATRN | 2645 | done | authenticated TURN, ODMR |
-| NO-SOLICITING | 3865 | done | `SOLICIT=` parameter |
-| MTRK | 3885 | done | `TRANSID=` parameter |
-| SUBMITTER | 4405 | done | `SUBMITTER=` parameter |
-| CONPERM | 4141 | done | content conversion permission |
-| CONNEG | 4141 | done | content negotiation |
-| CHECKPOINT | 1845 | deferred | no known server support |
-| VERB | — | deferred | Eric Allman, non-RFC; sendmail verbose mode |
-| ONEX | — | deferred | Eric Allman, non-RFC; one-transaction-only |
-| SEND | 821 | deferred | removed by RFC 5321; keyword parses, never sent |
-| SOML | 821 | deferred | as above |
-| SAML | 821 | deferred | as above |
-| TURN | 821 | deferred | removed by RFC 5321 for security reasons; superseded by ETRN/ATRN |
+| Capability | RFC | Client status | Server status | Note |
+|---|---|---|---|---|
+| ETRN | 1985 | done | done (T20) | queue-start command |
+| ATRN | 2645 | done (explicit role-reversal refusal) | done (T21) | authenticated TURN, ODMR |
+| NO-SOLICITING | 3865 | done | done (T21) | `SOLICIT=` parameter |
+| MTRK | 3885 | done | done (T21) | `MTRK=` certifier and optional timeout parameter [^mtrk] |
+| SUBMITTER | 4405 | done | done (T21) | `SUBMITTER=` parameter |
+| CONPERM | 4141 | done | done (T21) | content conversion permission |
+| CONNEG | 4141 | done | done (T21) | content negotiation and multiline RCPT success data |
+| CHECKPOINT | 1845 | deferred | — | no known server support |
+| VERB | — | deferred | — | Eric Allman, non-RFC; sendmail verbose mode |
+| ONEX | — | deferred | — | Eric Allman, non-RFC; one-transaction-only |
+| SEND | 821 | deferred | — | removed by RFC 5321; keyword parses, never sent |
+| SOML | 821 | deferred | — | as above |
+| SAML | 821 | deferred | — | as above |
+| TURN | 821 | deferred | — | removed by RFC 5321 for security reasons; superseded by ETRN/ATRN |
+
+[^mtrk]: RFC 3885 calls both the EHLO keyword and the MAIL parameter `MTRK`.
+    Earlier task text called the parameter `TRANSID`; an RFC-text audit during
+    T21 corrected the sender, receiver, and coverage record while retaining the
+    existing `LegacyOptions.TransitID` Go field name for source compatibility.
 
 A `deferred` row still requires that the keyword parse and reach the caller via
 the extension accessor. Deferred means "we do not implement the command", never

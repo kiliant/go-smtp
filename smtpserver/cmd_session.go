@@ -104,7 +104,7 @@ func (s *commandSession) execute(ctx context.Context, command smtpwire.Command, 
 	case "AUTH":
 		return s.handleAUTH(command)
 	default:
-		return commandAction{}, fmt.Errorf("smtpserver: command %s passed legality without a handler", verb)
+		return s.executeExtensionCommand(command)
 	}
 }
 
@@ -200,6 +200,13 @@ func (s *commandSession) handleMail(command smtpwire.Command) (commandAction, er
 		}
 		return s.syntaxReply("MAIL parameter")
 	}
+	if err := validateExtensionMailPath(path.Mailbox, params); err != nil {
+		var parameter *parameterError
+		if errors.As(err, &parameter) {
+			return s.syntaxReply(parameter.keyword)
+		}
+		return s.syntaxReply("MAIL parameter")
+	}
 	requestedUTF8 := params != nil && params.Transport != nil && params.Transport.SMTPUTF8
 	if hasNonASCII(path.Mailbox) && !requestedUTF8 {
 		return s.syntaxReply("SMTPUTF8")
@@ -255,11 +262,23 @@ func (s *commandSession) handleRcpt(command smtpwire.Command) (commandAction, er
 		}
 		return commandAction{}, nil
 	}
-	params := parseRcptParameters(path.Params)
+	params, err := parseRcptParameters(path.Params, s.parameterExtensionMap())
+	if err != nil {
+		var parameter *parameterError
+		if errors.As(err, &parameter) {
+			return s.syntaxReply(parameter.keyword)
+		}
+		return s.syntaxReply("RCPT parameter")
+	}
 	ctx, cancel := s.commandContext(s.server.timeouts.command)
-	err = s.backend.Rcpt(ctx, path.Mailbox, params, nil)
+	replyOptions := &RcptOptions{}
+	err = s.backend.Rcpt(ctx, path.Mailbox, params, replyOptions)
 	cancel()
 	if err != nil {
+		return s.backendReply("RCPT", err, 451, "Temporary server failure")
+	}
+	if err := validateRcptSuccessLines(replyOptions.SuccessLines); err != nil {
+		s.server.reportError(err, s.info)
 		return s.backendReply("RCPT", err, 451, "Temporary server failure")
 	}
 	s.recipients = append(s.recipients, path.Mailbox)
@@ -268,10 +287,25 @@ func (s *commandSession) handleRcpt(command smtpwire.Command) (commandAction, er
 			return commandAction{}, err
 		}
 	}
-	if err := s.writeReply(wireReply{code: 250, enhanced: smtp.EnhancedCode{Class: 2, Subject: 1, Detail: 5}, text: "Recipient OK"}); err != nil {
+	reply := wireReply{code: 250, enhanced: smtp.EnhancedCode{Class: 2, Subject: 1, Detail: 5}, text: "Recipient OK"}
+	if len(replyOptions.SuccessLines) != 0 {
+		reply.enhanced = smtp.EnhancedCode{}
+		reply.text = ""
+		reply.lines = append([]string{"Recipient OK"}, replyOptions.SuccessLines...)
+	}
+	if err := s.writeReply(reply); err != nil {
 		return commandAction{}, err
 	}
 	return commandAction{}, nil
+}
+
+func validateRcptSuccessLines(lines []string) error {
+	for _, line := range lines {
+		if line == "" || strings.ContainsAny(line, "\r\n\x00") {
+			return errors.New("smtpserver: Session.Rcpt returned an invalid success continuation line")
+		}
+	}
+	return nil
 }
 
 func (s *commandSession) handleRSET(command smtpwire.Command) (commandAction, error) {

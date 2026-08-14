@@ -103,7 +103,7 @@ func parameterExtension(param smtp.Param) string {
 		return string(smtp.ExtFutureRelease)
 	case "SOLICIT":
 		return string(smtp.ExtNoSoliciting)
-	case "TRANSID":
+	case "MTRK":
 		return string(smtp.ExtMTRK)
 	case "BODY":
 		switch strings.ToUpper(param.Value) {

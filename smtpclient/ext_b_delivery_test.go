@@ -120,6 +120,36 @@ func TestDeliverByModeNAllowsNegativeSeconds(t *testing.T) {
 	}
 }
 
+func TestDeliverByTraceModifier(t *testing.T) {
+	raw, done := startFakeServer(t, []fakeStep{
+		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250 DELIVERBY 30\r\n")},
+		{command: "MAIL FROM:<sender@example.test> BY=60;RT", replies: fakeReplies("250 ok\r\n")},
+	}, nil)
+	defer done()
+	c, err := NewClient(context.Background(), raw, &ClientOptions{Identity: "client.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 60, Mode: "R", Trace: true}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeliverByFutureAdvertisementOption(t *testing.T) {
+	raw, done := startFakeServer(t, []fakeStep{
+		{command: "EHLO client.test", replies: fakeReplies("250-server\r\n", "250 DELIVERBY 30,FUTURE\r\n")},
+		{command: "MAIL FROM:<sender@example.test> BY=60;R", replies: fakeReplies("250 ok\r\n")},
+	}, nil)
+	defer done()
+	c, err := NewClient(context.Background(), raw, &ClientOptions{Identity: "client.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DeliverBy: &smtp.DeliverByOptions{Seconds: 60, Mode: "R"}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestDeliverByModeRRejectsNonPositiveSeconds is the regression guard that
 // mode "R" (return if not delivered by by-time) keeps its original,
 // stricter bound: only mode "N" gained the zero/negative allowance.
@@ -152,6 +182,21 @@ func TestDSNReturnAcceptsUnmodelledValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturn("x-future-value")}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMTPriorityPreservesOpenSignedDecimal(t *testing.T) {
+	raw, done := startFakeServer(t, []fakeStep{
+		{command: "EHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250 MT-PRIORITY\r\n")},
+		{command: "MAIL FROM:<sender@example.test> MT-PRIORITY=42", replies: fakeReplies("250 ok\r\n")},
+	}, nil)
+	defer done()
+	c, err := NewClient(context.Background(), raw, &ClientOptions{Identity: "client.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Mail(context.Background(), "sender@example.test", &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{MTPriority: smtp.MTPriority("42")}}, nil); err != nil {
 		t.Fatal(err)
 	}
 }

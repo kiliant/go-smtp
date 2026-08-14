@@ -122,7 +122,10 @@ var commandRules = map[string]commandRule{
 func (s protocolState) legality(verb string) commandLegality {
 	rule, ok := commandRules[strings.ToUpper(verb)]
 	if !ok {
-		return commandUnknown
+		rule, ok = extensionCommandRule(strings.ToUpper(verb))
+		if !ok {
+			return commandUnknown
+		}
 	}
 	mode := modeSetSMTP
 	if s.mode == modeLMTP {

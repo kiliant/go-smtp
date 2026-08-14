@@ -65,7 +65,10 @@ func TestParseMailParametersRejectsMalformedOrUnadvertisedKnownValues(t *testing
 }
 
 func TestParseRcptParametersPreservesUnknownSpellingAndOrder(t *testing.T) {
-	opts := parseRcptParameters([]smtpwire.Param{{Keyword: "X-One", Value: "a"}, {Keyword: "x-two"}})
+	opts, err := parseRcptParameters([]smtpwire.Param{{Keyword: "X-One", Value: "a"}, {Keyword: "x-two"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if opts == nil || len(opts.Extra) != 2 || opts.Extra[0].Keyword != "X-One" || opts.Extra[1].Keyword != "x-two" {
 		t.Fatalf("RCPT options = %+v", opts)
 	}

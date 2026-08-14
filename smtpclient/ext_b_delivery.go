@@ -204,9 +204,16 @@ func (c *Client) deliverByParam(d *smtp.DeliverByOptions) (smtp.Param, error) {
 		return smtp.Param{}, fmt.Errorf("smtpclient: invalid DELIVERBY mode %q", d.Mode)
 	}
 	v := strconv.FormatInt(d.Seconds, 10) + ";" + mode
+	if d.Trace {
+		v += "T"
+	}
 	if mode == "R" {
 		if params, ok := c.Extension(smtp.ExtDeliverBy); ok && params != "" {
-			minimum, err := strconv.ParseInt(params, 10, 64)
+			minimumText, _, _ := strings.Cut(params, ",")
+			if minimumText == "" {
+				return smtp.Param{Keyword: "BY", Value: v}, nil
+			}
+			minimum, err := strconv.ParseInt(minimumText, 10, 64)
 			if err != nil || minimum < 1 {
 				return smtp.Param{}, errors.New("smtpclient: invalid DELIVERBY EHLO parameter")
 			}
@@ -253,9 +260,17 @@ func (c *Client) futureReleaseParam(f *smtp.FutureReleaseOptions) (smtp.Param, e
 
 func mtPriorityParam(priority smtp.MTPriority) (smtp.Param, error) {
 	v := string(priority)
-	n, err := strconv.Atoi(v)
-	if err != nil || n < -9 || n > 9 || (n == 0 && v != "0") || (n != 0 && strconv.Itoa(n) != v) {
+	digits := v
+	if strings.HasPrefix(digits, "+") || strings.HasPrefix(digits, "-") {
+		digits = digits[1:]
+	}
+	if digits == "" {
 		return smtp.Param{}, fmt.Errorf("smtpclient: invalid MT-PRIORITY value %q", priority)
+	}
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return smtp.Param{}, fmt.Errorf("smtpclient: invalid MT-PRIORITY value %q", priority)
+		}
 	}
 	return smtp.Param{Keyword: "MT-PRIORITY", Value: v}, nil
 }
