@@ -210,3 +210,48 @@ func TestBDATOpaqueChunksAndZeroLengthTerminator(t *testing.T) {
 		t.Fatal("fake BDAT server did not finish")
 	}
 }
+
+func TestLMTPBDATReturnsPerRecipientReplies(t *testing.T) {
+	raw, done := startFakeServer(t, []fakeStep{
+		{command: "LHLO client.test", replies: fakeReplies("250-fake.test\r\n", "250-CHUNKING\r\n", "250 ENHANCEDSTATUSCODES\r\n")},
+		{command: "MAIL FROM:<sender@example.test>", replies: fakeReplies("250 sender ok\r\n")},
+		{command: "RCPT TO:<one@example.test>", replies: fakeReplies("250 one ok\r\n")},
+		{command: "RCPT TO:<two@example.test>", replies: fakeReplies("250 two ok\r\n")},
+		{command: "BDAT 0 LAST", replies: fakeReplies("250 2.1.5 one delivered\r\n", "550 5.1.1 two unknown\r\n")},
+		{command: "NOOP", replies: fakeReplies("250 reusable\r\n")},
+	}, nil)
+	defer func() {
+		_ = raw.Close()
+		done()
+	}()
+
+	c, err := NewClient(context.Background(), raw, &ClientOptions{Identity: "client.test", LMTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Mail(context.Background(), "sender@example.test", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, recipient := range []string{"one@example.test", "two@example.test"} {
+		if err := c.Rcpt(context.Background(), recipient, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := c.Data(context.Background(), strings.NewReader(""), &DataOptions{UseChunking: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Recipient != "one@example.test" || got[1].Recipient != "two@example.test" {
+		t.Fatalf("BDAT recipients = %#v", got)
+	}
+	if !got[0].Accepted() || got[0].Enhanced.Raw != "2.1.5" || got[0].Text != "one delivered" {
+		t.Fatalf("first BDAT result = %#v", got[0])
+	}
+	if got[1].Accepted() || got[1].Enhanced.Raw != "5.1.1" || got[1].Text != "two unknown" {
+		t.Fatalf("second BDAT result = %#v", got[1])
+	}
+	if err := c.Noop(context.Background(), nil); err != nil {
+		t.Fatalf("NOOP after valid LMTP BDAT: %v", err)
+	}
+}

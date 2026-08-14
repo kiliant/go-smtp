@@ -200,16 +200,55 @@ func bdat(ctx context.Context, c *Client, r io.Reader, chunkSize int) (smtp.Data
 				c.conn.recipients = nil
 			}
 			c.conn.mu.Unlock()
-			if err := unexpectedReply("BDAT", reply, c.conn.enhancedStatusCodes(), 250); err != nil {
-				return nil, true, err
-			}
-			return bdatResult(recipients, reply, c), true, nil
+			result, err := bdatFinalReplies(ctx, c, recipients, reply)
+			return result, true, err
 		}
 		if err := unexpectedReply("BDAT", reply, c.conn.enhancedStatusCodes(), 250); err != nil {
 			// A non-final BDAT has already changed server-side message state.
 			// Keep the local transaction open so RSET is the sole recovery.
 			return nil, true, err
 		}
+	}
+}
+
+func bdatFinalReplies(ctx context.Context, c *Client, recipients []string, first smtpwire.Reply) (smtp.DataResult, error) {
+	c.conn.mu.Lock()
+	lmtp := c.conn.options.LMTP
+	c.conn.mu.Unlock()
+	if !lmtp {
+		if err := unexpectedReply("BDAT", first, c.conn.enhancedStatusCodes(), 250); err != nil {
+			return nil, err
+		}
+		return bdatResult(recipients, first, c), nil
+	}
+
+	result := make(smtp.DataResult, len(recipients))
+	result[0] = bdatRecipientResult(recipients[0], first, c)
+	for i := 1; i < len(recipients); i++ {
+		reply, err := c.conn.pipeline.read(ctx, "BDAT", c.conn.dataFinalTimeout())
+		if err != nil {
+			// pipeline.read poisons errors that could desynchronise the reply
+			// stream. Keep this explicit for any future alternate reader.
+			c.conn.poison()
+			return nil, err
+		}
+		result[i] = bdatRecipientResult(recipients[i], reply, c)
+	}
+	if err := c.rejectExtraLMTPFinalReply("BDAT"); err != nil {
+		c.conn.poison()
+		return nil, err
+	}
+	return result, nil
+}
+
+func bdatRecipientResult(recipient string, reply smtpwire.Reply, c *Client) smtp.RecipientResult {
+	errReply := replyError("BDAT", reply, c.conn.enhancedStatusCodes())
+	return smtp.RecipientResult{
+		Recipient: recipient,
+		Command:   "BDAT",
+		Code:      errReply.Code,
+		Enhanced:  errReply.Enhanced,
+		Text:      errReply.Text,
 	}
 }
 
@@ -239,8 +278,7 @@ func (c *Client) writeBDATChunk(ctx context.Context, chunk []byte, last bool) er
 func bdatResult(recipients []string, reply smtpwire.Reply, c *Client) smtp.DataResult {
 	result := make(smtp.DataResult, len(recipients))
 	for i, recipient := range recipients {
-		errReply := replyError("BDAT", reply, c.conn.enhancedStatusCodes())
-		result[i] = smtp.RecipientResult{Recipient: recipient, Command: "BDAT", Code: errReply.Code, Enhanced: errReply.Enhanced, Text: errReply.Text}
+		result[i] = bdatRecipientResult(recipient, reply, c)
 	}
 	return result
 }

@@ -10,8 +10,8 @@ import (
 	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
-// lmtpExtraReplyProbeTimeout bounds the post-DATA check for an unsolicited
-// reply without turning a valid LMTP completion into a second DATA timeout.
+// lmtpExtraReplyProbeTimeout bounds the post-transfer check for an unsolicited
+// reply without turning a valid LMTP completion into a second final timeout.
 const lmtpExtraReplyProbeTimeout = 10 * time.Millisecond
 
 // LMTP uses the same DATA command as SMTP, but RFC 2033 requires one final
@@ -50,7 +50,7 @@ func readLMTPFinalReplies(ctx context.Context, c *Client, recipients []string) (
 	// A complete LMTP DATA exchange has exactly one final reply per accepted
 	// RCPT. Bytes already buffered beyond that count cannot belong to a later
 	// client command, so retaining the session would misattribute them.
-	if err := c.rejectExtraLMTPFinalReply(); err != nil {
+	if err := c.rejectExtraLMTPFinalReply("DATA"); err != nil {
 		c.conn.poison()
 		return nil, true, err
 	}
@@ -70,14 +70,14 @@ func readLMTPFinalReplies(ctx context.Context, c *Client, recipients []string) (
 // without waiting for another command to misattribute it. Buffered bytes are
 // checked first; the zero-deadline read also releases a peer blocked while
 // writing an extra reply on a full-duplex connection.
-func (c *Client) rejectExtraLMTPFinalReply() error {
+func (c *Client) rejectExtraLMTPFinalReply(command string) error {
 	c.conn.mu.Lock()
 	reader := c.conn.reader
 	raw := c.conn.raw
 	buffered := reader.Buffered() > 0
 	c.conn.mu.Unlock()
 	if buffered {
-		return transportError("DATA", errors.New("smtpclient: LMTP sent more final replies than accepted recipients"))
+		return transportError(command, errors.New("smtpclient: LMTP sent more final replies than accepted recipients"))
 	}
 	reply, err := reader.ReadReply(time.Now().Add(lmtpExtraReplyProbeTimeout), smtpwire.Limits{})
 	_ = raw.SetReadDeadline(time.Time{})
@@ -86,8 +86,8 @@ func (c *Client) rejectExtraLMTPFinalReply() error {
 		if errors.As(err, &networkErr) && networkErr.Timeout() {
 			return nil
 		}
-		return transportError("DATA", err)
+		return transportError(command, err)
 	}
 	_ = reply
-	return transportError("DATA", errors.New("smtpclient: LMTP sent more final replies than accepted recipients"))
+	return transportError(command, errors.New("smtpclient: LMTP sent more final replies than accepted recipients"))
 }
