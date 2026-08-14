@@ -150,6 +150,13 @@ func startPostfixSender(t *testing.T, ctx context.Context, transport, destinatio
 		"POSTFIX_smtpd_recipient_restrictions": "permit_mynetworks,reject_unauth_destination",
 		"POSTFIX_smtpd_relay_restrictions":     "permit_mynetworks,reject_unauth_destination",
 		"POSTFIX_smtp_tls_security_level":      "none",
+		// Postfix's own DNS client tries AAAA before A and, on at least one
+		// CI runner's rootless Podman network, gets a hard resolver error
+		// for host.containers.internal's AAAA record rather than an empty
+		// answer — it then gives up instead of falling back to A. Nothing in
+		// this harness uses IPv6, so pin Postfix to IPv4-only lookups rather
+		// than depend on how a given Podman network resolves the alias.
+		"POSTFIX_inet_protocols": "ipv4",
 	}
 	if transport == "lmtp" {
 		env["POSTFIX_default_transport"] = "lmtp"
