@@ -1,21 +1,21 @@
 # go-smtp
 
-An ESMTP and LMTP client library for Go, built so that complete extension
-coverage and a stable v1.0 are compatible goals rather than competing ones.
+ESMTP and LMTP client and server libraries for Go, built so that complete
+extension coverage and stable public APIs are compatible goals rather than
+competing ones.
 
 ```
 import "github.com/kiliant/go-smtp/smtpclient"
+import "github.com/kiliant/go-smtp/smtpserver"
 ```
 
-> **Status: pre-v1 release-candidate ready.** The ESMTP/LMTP client,
-> authentication, transaction API, extension groups A–C, API freeze review,
-> fuzz targets, examples, release gates, and default seven-server
-> interoperability harness are implemented. Local CI-equivalent checks and
-> representative Postfix, Dovecot, and GreenMail interop runs pass. The new
-> GitHub PR and nightly workflows still need their first hosted runs before
-> those external checks can be claimed as operational evidence. LMTP and
-> authenticated submission also need a second independent server before their
-> coverage can be marked verified; see `docs/RFC-COVERAGE.md`.
+> **Status:** the client module is stable v1.x and its compatibility promise is
+> enforced with `apidiff`. The independently versioned server module is v0.x:
+> `smtpserver/v0.1.0` is its first release, so its backend contract may still
+> change before v1 and every such change will be called out in its changelog.
+> The reference server is part of the interoperability matrix; Postfix and Exim
+> relay through it, including Postfix LMTP, and the combined 36-target fuzz
+> campaign is clean. See `docs/RFC-COVERAGE.md` for capability-level status.
 
 ## The design constraint
 
@@ -104,30 +104,26 @@ reply to DATA" cannot be fixed after a freeze.
   bounce generation are out of scope permanently.
 - **MIME composition, DKIM/ARC signing, charset transcoding.** The client
   transmits what it is given. Use dedicated libraries.
-- **Mailbox storage, queueing, spam filtering, DKIM verification.** The planned
-  server framework (below) defines a backend surface; it does not implement one
-  for production.
+- **Mailbox storage, durable queueing, spam filtering, DKIM verification.** The
+  server framework defines a backend surface; its `memory` backend is a
+  non-durable test/development sink and must not be used in production.
 - **IMAP, POP3, JMAP.**
 
-## Not yet, but scoped
+## Server module
 
-A server framework, milestone M6, after v1.0 of the client. The core types were
-split into a shared I/O-free package from the first commit precisely so this can
-be added without an API break, and that has held up — `smtp.DataResult` was
-shaped in M0 for LMTP's per-recipient replies, and it turns out to be exactly
-what an LMTP *server* must produce.
+`github.com/kiliant/go-smtp/smtpserver` serves RFC 5321 SMTP and RFC 2033 LMTP
+from a caller-supplied `net.Listener`. Its backend is a concrete struct of
+context-aware function fields, so a future extension adds a field instead of
+breaking every external implementation of an interface. `smtpserver/backendtest`
+checks third-party backends, while `smtpserver/memory` provides a supported,
+non-durable sink for development and application tests.
 
-Its design is scoped now rather than after the tag, for one reason: adding types
-to the shared package after v1.0 is additive and always allowed, but *reshaping*
-one is not — and a vocabulary that has only ever been exercised in the client
-direction can contain a type a server can consume but cannot naturally produce.
-No client-side review finds that. So the design runs before the freeze, the
-implementation after it, and a bidirectional review of the shared vocabulary is a
-v1.0 exit criterion.
-
-See `docs/SERVER-DESIGN.md` — **approved**, four revisions, with every RFC
-claim it rests on quoted and sourced. No server code exists yet; the
-implementation follows the v1.0 tag.
+The server is a nested module on purpose. The root client module is frozen at
+v1; the server's harder backend contract starts at v0.1.0 and can mature without
+weakening that client promise. Both directions reuse the I/O-free root `smtp`
+vocabulary, including LMTP's per-recipient `smtp.DataResult`, while the nested
+module depends downward on a released root v1 version. See
+`docs/SERVER-DESIGN.md` and `docs/API-STABILITY.md` §4b and §9.
 
 ## Documentation
 
@@ -139,18 +135,20 @@ implementation follows the v1.0 tag.
 | `docs/RFC-COVERAGE.md` | Keyword → RFC → status, from the IANA registry |
 | `docs/INTEROP.md` | Server matrix and how to run it |
 | `docs/ROADMAP.md` | Milestones and exit criteria |
-| `docs/SERVER-DESIGN.md` | Server framework design — approved, implementation post-v1.0 |
+| `docs/SERVER-DESIGN.md` | Approved server framework design implemented by `smtpserver` |
 | `CLAUDE.md` | Working rules for AI agents contributing here |
 
 ## Testing
 
-The runnable programs under `examples/` cover STARTTLS submission, implicit
-TLS, partial recipient rejection, streaming DATA and BDAT, LMTP, DSN, and the
-unmodelled-parameter escape hatch. They use placeholder endpoints and
-credentials and are compiled by `go test ./...`.
+The runnable client programs under `examples/` cover STARTTLS submission,
+implicit TLS, partial recipient rejection, streaming DATA and BDAT, LMTP, DSN,
+and the unmodelled-parameter escape hatch. `smtpserver/examples/` adds a minimal
+sink, a submission listener, LMTP result construction, a custom five-handler
+backend, and a self-contained smtpclient test double. Both sets compile in CI.
 
 ```bash
 go test ./...                                          # unit, no network
+(cd smtpserver && go test ./...)                       # server module + examples
 go test -count=1 -race -tags=interop ./smtpclient      # production client, needs podman
 go test -count=1 -race -tags=interop ./interop/...     # harness packages, run after smtpclient
 go test -fuzz='^FuzzReplyReader$' ./internal/smtpwire  # parser robustness

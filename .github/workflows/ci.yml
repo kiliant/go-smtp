@@ -63,6 +63,9 @@ jobs:
       # only shows up on the floor toolchain or on darwin was invisible to it,
       # and a separate job re-runs the whole suite to test one flag.
       - run: go test -race -count=1 ./...
+      - name: test smtpserver module
+        working-directory: smtpserver
+        run: go test -race -count=1 ./...
 
   quality:
     name: vet, staticcheck, gofmt
@@ -83,6 +86,9 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
+      - name: go vet smtpserver module
+        working-directory: smtpserver
+        run: go vet ./...
 
       # The tagged variants are the point of this job, not an extra. Interop
       # test files are excluded from an untagged `go vet ./...`, so a vet job
@@ -106,6 +112,7 @@ jobs:
           staticcheck ./...
           staticcheck -tags=interop ./...
           staticcheck -tags='interop interop_emulated' ./...
+          (cd smtpserver && staticcheck ./...)
 
       - name: Tools left go.mod alone
         run: git diff --exit-code -- go.mod go.sum
@@ -120,6 +127,9 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - run: go test ./examples/...
+      - name: compile smtpserver examples
+        working-directory: smtpserver
+        run: go test ./examples/...
 
   supply-chain:
     # The zero-dependency policy, mechanised. Without this assertion the policy

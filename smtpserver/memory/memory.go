@@ -1,5 +1,6 @@
-// Package memory provides a non-durable, in-process SMTP/LMTP sink for tests
-// and development. It is not a queue, mailbox, relay, or production backend.
+// Package memory provides a non-durable, in-process RFC 5321 SMTP and RFC 2033
+// LMTP sink for tests and development. It is not a queue, mailbox, relay, or
+// production backend.
 package memory
 
 import (
@@ -12,15 +13,17 @@ import (
 	"github.com/kiliant/go-smtp/smtpserver"
 )
 
-// Options configures a Sink. Nil means defaults.
+// Options configures an RFC 5321 SMTP or RFC 2033 LMTP Sink. Nil means
+// defaults.
 // Callers constructing an Options literal must use keyed fields.
 type Options struct {
 	_ struct{}
 }
 
-// Message is one message accepted by the in-process sink. Data is the complete
-// transparent message content presented to Session.Data. The recipient slice
-// preserves accepted RCPT order and duplicates.
+// Message is one RFC 5321 SMTP or RFC 2033 LMTP message accepted by the
+// in-process sink. Data is the complete transparent message content presented
+// to Session.Data. The recipient slice preserves accepted RCPT order and
+// duplicates.
 //
 // Callers constructing a Message literal must use keyed fields.
 type Message struct {
@@ -36,16 +39,17 @@ type Message struct {
 	_ struct{}
 }
 
-// Sink stores accepted messages in memory. It is safe for concurrent server
-// sessions. A Sink is intentionally non-durable and must not be used in
-// production.
+// Sink stores accepted RFC 5321 SMTP or RFC 2033 LMTP messages in memory. It is
+// safe for concurrent server sessions. A Sink is intentionally non-durable and
+// must not be used in production.
 type Sink struct {
 	mu       sync.Mutex
 	messages []Message
 	backend  *smtpserver.Backend
 }
 
-// New constructs a non-durable in-memory sink and its smtpserver backend.
+// New constructs a non-durable RFC 5321 SMTP and RFC 2033 LMTP in-memory sink
+// and its smtpserver backend.
 func New(opts *Options) *Sink {
 	_ = opts
 	sink := &Sink{}
@@ -53,8 +57,9 @@ func New(opts *Options) *Sink {
 	return sink
 }
 
-// Backend returns the concurrency-safe smtpserver backend owned by the sink.
-// The returned pointer remains valid for the lifetime of Sink.
+// Backend returns the concurrency-safe RFC 5321 SMTP and RFC 2033 LMTP backend
+// owned by the sink. The returned pointer remains valid for the lifetime of
+// Sink.
 func (s *Sink) Backend() *smtpserver.Backend {
 	if s == nil {
 		return nil
@@ -62,8 +67,9 @@ func (s *Sink) Backend() *smtpserver.Backend {
 	return s.backend
 }
 
-// Messages returns a deep snapshot of accepted messages in delivery order.
-// Mutating the returned values does not affect the Sink.
+// Messages returns a deep snapshot of accepted RFC 5321 SMTP or RFC 2033 LMTP
+// messages in delivery order. Mutating the returned values does not affect the
+// Sink.
 func (s *Sink) Messages() []Message {
 	if s == nil {
 		return nil

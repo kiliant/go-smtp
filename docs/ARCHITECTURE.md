@@ -12,13 +12,23 @@ github.com/kiliant/go-smtp          package smtp
     ├── internal/smtpsasl    SASL mechanisms
     ├── internal/saslprep    SASLprep (RFC 4013) credential preparation
     ├── internal/unicodenorm NFC/NFKC normalisation, generated tables
-    └── smtpclient           package smtpclient — the client
+    └── smtpclient           package smtpclient — the stable v1 client
 
-    planned, milestone M6 — see docs/SERVER-DESIGN.md (approved 2026-08-04):
-    └── smtpserver           package smtpserver — the server framework
-        ├── memory           in-memory reference backend (supported)
-        └── backendtest      conformance suite third-party backends run
+github.com/kiliant/go-smtp/smtpserver   nested v0.x module
+    └── package smtpserver — the server framework
+        ├── memory      non-durable in-memory backend (supported for tests/dev)
+        └── backendtest conformance suite third-party backends run
+
+Dependency direction across the module boundary:
+
+    smtpserver → package smtp → no sibling packages
 ```
+
+The nested module imports the released root module and shares this repository's
+`internal/smtpwire` and `internal/smtpsasl` implementations under Go's internal
+visibility rule. The root module never imports `smtpserver`; releasing or
+breaking the server's v0.x API therefore does not move the root module's
+compatibility baseline. Development uses `go.work`, with no committed `replace`.
 
 The server adds **no new internal package**. Its codec work — command decoding,
 reply encoding, path parsing, `Received:` generation, the SASL responder half —
@@ -30,15 +40,14 @@ would have needed lifting is small enough to live in the server.
 
 `internal/unicodenorm` sits below `internal/saslprep` and imports nothing outside
 the standard library, so the normalisation tables stay reusable by anything else
-that needs them (SMTPUTF8 address comparison, a future server framework) without
+that needs them (SMTPUTF8 address comparison or the server framework) without
 either package growing a dependency on the client.
 
 Dependencies point downward only. The reason `package smtp` holds the vocabulary
-and does no I/O is forward-looking: **two** future consumers reuse exactly these
-types — the delivery layer (M5, T14) and the server framework (M5, T15). A
-per-recipient result type that lived in `smtpclient` would have to be duplicated
-or imported backwards by both, and fixing that later is a breaking change. The
-split costs nothing now and buys the option twice.
+and does no I/O is now demonstrated in both directions: `smtpclient` consumes
+server replies and `smtpserver` produces them without importing the client. The
+future delivery layer also reuses these types. A per-recipient result type that
+lived in `smtpclient` would have required duplication or a backwards import.
 
 ## Decision: the vocabulary is bidirectional; the codec is not, and mostly need not be
 

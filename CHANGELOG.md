@@ -9,6 +9,37 @@ outcomes rather than repeating commit messages.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-21
+
+This additive release supplies the shared vocabulary and internal
+server-direction protocol primitives required by the independently versioned
+`smtpserver/v0.1.0` module. The stable client API remains backward compatible
+with v1.0.0.
+
+### Added
+
+- **Exported API:** added exact received-parameter preservation through
+  `MailOptions.AuthOriginal`, `DSNMailOptions.EnvelopeIDOriginal`,
+  `DSNRcptOptions.ORCPTOriginal`, and `LegacyOptions.SubmitterOriginal` so a
+  server or relay can retain keyword case and original xtext spelling.
+- **Exported API:** added `Limits.Extra` for open-ended RFC 9422 registry entries
+  and `DeliverByOptions.Trace` for RFC 2852's optional `T` modifier.
+- Added the internal server-direction command/reply, EHLO, path, BDAT,
+  `Received:` and SASL responder primitives consumed by the nested server
+  module. No internal type is exposed by the root public API.
+
+### Fixed
+
+- Read every RFC 2033 per-recipient final reply after the last LMTP BDAT chunk.
+- Reject ambiguous bare-CR DATA terminators instead of permitting SMTP
+  smuggling across peers that disagree about line boundaries.
+
+### Changed
+
+- The interoperability harness now includes the container-less reference
+  server and digest-pins every container image. CI's root `apidiff` snapshot is
+  explicitly scoped away from independently versioned nested modules.
+
 ## [1.0.0] - 2026-08-12
 
 The first stable release, and the API freeze. From here the exported surface of
@@ -103,5 +134,6 @@ is [`.github/RELEASING.md`](.github/RELEASING.md). Every future release moves
 the relevant Unreleased entries into a dated version section; every exported
 API change must continue to be labeled explicitly.
 
-[Unreleased]: https://github.com/kiliant/go-smtp/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/kiliant/go-smtp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/kiliant/go-smtp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/kiliant/go-smtp/releases/tag/v1.0.0

@@ -3,28 +3,38 @@
 Releases are deliberate compatibility events. Do not tag from an unreviewed
 working tree or treat a green unit-test run as the complete checklist.
 
-## Version and tag format
+## Modules, versions and tag format
 
-- Releases use Semantic Versioning and an annotated tag named
-  `vMAJOR.MINOR.PATCH`, for example `v1.0.0`.
+- The stable root module uses Semantic Versioning and an annotated tag named
+  `vMAJOR.MINOR.PATCH`, for example `v1.1.0`.
+- The independently versioned nested server module uses the directory-prefixed
+  tag `smtpserver/vMAJOR.MINOR.PATCH`, for example `smtpserver/v0.1.0`.
 - Release candidates use `vMAJOR.MINOR.PATCH-rc.N`, beginning with `.1`.
-- v0 releases may break the exported API, but each break must be called out in
-  CHANGELOG.md. At v1 and later, incompatible API changes are blocked by CI and
-  require a new major version.
+- `smtpserver` release candidates retain the same prefix, for example
+  `smtpserver/v0.2.0-rc.1`.
+- Server v0 releases may break their exported API, but each break must be called
+  out in `smtpserver/CHANGELOG.md`. The root v1 API remains additive-only and is
+  governed by `CHANGELOG.md` plus the root apidiff gate.
 - The tag and GitHub release must point at the same reviewed commit. Never move
   or reuse a published tag.
+
+A nested server release does not advance the root module's apidiff baseline.
+When server work also requires a new released root version, release and tag the
+root first, then bump `smtpserver/go.mod`, record only the controlled root-module
+entries in `smtpserver/go.sum`, and release the server. Development uses
+`go.work`; neither module may commit a `replace` directive.
 
 ## Pre-tag checklist
 
 Run this checklist on the exact candidate commit:
 
 1. The worktree is clean and every commit follows Conventional Commits.
-2. `CHANGELOG.md` has a dated version section. Every exported symbol addition or
-   change says **Exported API**, and every pre-v1 incompatibility says
-   **Breaking exported API change (pre-v1)**.
+2. The module's changelog has a dated version section. Every exported symbol
+   addition or change says **Exported API**, and every server pre-v1
+   incompatibility says **Breaking exported API change (pre-v1)**.
 3. `docs/RFC-COVERAGE.md` has no stray `planned` or `in progress` row intended
    for this release. Deferred rows remain explicit and justified.
-4. CI passes on Go 1.24 (the `go.mod` floor) and 1.26 (the current release),
+4. CI passes for both modules on Go 1.24 (the `go.mod` floor) and 1.26 (the current release),
    including race, gofmt, vet under every interop tag set, the zero-dependency
    gate, Staticcheck 2026.1 (`v0.7.0`), compiled examples, and the API-surface
    gates.
@@ -45,7 +55,8 @@ Run this checklist on the exact candidate commit:
    `.github/scripts/run-interop.sh interop` and
    `.github/scripts/run-interop.sh 'interop interop_emulated'`; on an arm64 host
    the latter genuinely emulates and is slow.
-7. Run the pinned apidiff tool against the latest release tag and review both
+7. For a root release, run the pinned apidiff tool against the latest root
+   release tag and review both
    compatible and incompatible changes. Before v1, reconcile every incompatible
    line with CHANGELOG.md. At and after v1, there must be no incompatibilities —
    with one narrow, objective exception: an **alias-preserving move** of a symbol
@@ -54,9 +65,34 @@ Run this checklist on the exact candidate commit:
    carries a compile-time identity assertion for every symbol apidiff names, and
    that file compiles and passes. No assertion, no overrule. See
    `docs/API-STABILITY.md` §10.
-8. Confirm there are no unreviewed dependency additions (`go.sum` must remain
-   absent), no unpinned CI tools or container images, and no generated-file
-   drift.
+   For a server release, review the full exported surface with `api-guardian`
+   and compare it with the latest `smtpserver/v*` baseline when one exists.
+   A v0 incompatibility is permitted only when the nested changelog labels it.
+8. Confirm there are no unreviewed dependency additions. Root `go.sum` remains
+   absent; nested `smtpserver/go.sum` may contain only the hashes for its exact
+   released root-module dependency. Confirm there is no committed `replace`, no
+   unpinned CI tool or container image, and no generated-file drift.
+
+## Cutting a nested server release
+
+1. If the server needs root changes not present in a released version, cut the
+   root release first using the normal process. This is an independent root
+   compatibility event, not an effect of the server tag.
+2. Set `smtpserver/go.mod` to that released root version, remove every
+   `replace`, and refresh only the controlled root entries in
+   `smtpserver/go.sum`.
+3. Move nested Unreleased entries to a dated section in
+   `smtpserver/CHANGELOG.md`, restore an empty Unreleased section, and obtain the
+   full-surface `api-guardian` verdict.
+4. From `smtpserver/`, run tests, race, vet, staticcheck, examples, and a
+   standalone `GOWORK=off` build. From the repository root, run the
+   zero-dependency gate, combined discovered fuzz campaign, and required
+   interop checks.
+5. Commit with `chore(smtpserver): prepare vX.Y.Z`, then create the annotated
+   tag `git tag -a smtpserver/vX.Y.Z -m 'go-smtp smtpserver vX.Y.Z'`.
+6. Push the commit and prefixed tag only after approval, then create the GitHub
+   release from `smtpserver/CHANGELOG.md`. Do not create or move a root tag for
+   a server-only release.
 
 The nightly jobs are evidence, not a substitute for this rerun: record links to
 the candidate commit's CI, fuzz, and interop runs in the release notes.

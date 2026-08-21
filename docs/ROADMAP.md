@@ -124,6 +124,23 @@ Two separate packages, each design-document first:
 **Exit:** the reference server joins the interop matrix as its own entry, real
 MTAs relay through it, and the server-side fuzz campaign is clean.
 
+**M6 evidence (T22/T23, 2026-08-21):**
+
+- `interop/servers/gosmtp/profile.go` registers the container-less `gosmtp`
+  target and pins the server capability profile used by the default matrix.
+- `interop/servers/gosmtp/external_sender_interop_test.go` relays distinct
+  messages through the reference server from Postfix SMTP, Postfix LMTP, and
+  Exim SMTP; the LMTP case verifies per-recipient final replies by requiring the
+  real Postfix queue to drain.
+- `smtpserver/**/*_fuzz_test.go` and the discovery-based
+  `.github/scripts/fuzz.sh` cover the server boundary. Hosted run
+  [31793174758](https://github.com/kiliant/go-smtp/actions/runs/31793174758)
+  discovered and passed all 36 root-plus-server targets at ten minutes each.
+
+The M6 exit criterion is complete. `smtpserver/v0.1.0` is the first nested-module
+release; the independently versioned client remains under its v1 compatibility
+promise.
+
 Neither may pull scope forward into the client. Durable queues, retry
 scheduling, bounce generation, mailbox storage, spam filtering and full MTA
 behaviour are out of scope at every milestone.

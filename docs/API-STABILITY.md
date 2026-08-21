@@ -473,8 +473,9 @@ Consequences, all three binding:
 
 ### Exception: `smtpserver` outside the v1 promise — APPROVED 2026-08-04
 
-**Status: approved. Nothing enforces it yet, because no `smtpserver` code exists;
-it becomes real with the first `smtpserver/go.mod`.**
+**Status: approved and enforced.** `smtpserver/go.mod` is an independently
+versioned nested module, its API-surface test applies the rules in this document,
+and the root module does not import it.
 
 The policy above says v1.0 freezes the exported API, without qualifying by
 package. Taken literally, `smtpserver` inherits the freeze the moment it lands —
