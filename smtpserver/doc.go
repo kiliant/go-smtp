@@ -1,4 +1,5 @@
-// Package smtpserver implements SMTP and LMTP server protocol handling.
+// Package smtpserver implements RFC 5321 SMTP and RFC 2033 LMTP server
+// protocol handling.
 //
 // The package is a nested v0.x module so its backend contract can mature
 // independently of the stable v1 client module. It provides protocol framing,

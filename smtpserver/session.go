@@ -9,10 +9,10 @@ import (
 	"github.com/kiliant/go-smtp"
 )
 
-// Session contains the handlers for one SMTP or LMTP connection. The
-// framework never calls two fields concurrently for the same Session, so
-// per-session state needs no locking. Shared Backend state must be safe for
-// concurrent use.
+// Session contains the handlers for one RFC 5321 SMTP or RFC 2033 LMTP
+// connection. The framework never calls two fields concurrently for the same
+// Session, so per-session state needs no locking. Shared Backend state must be
+// safe for concurrent use.
 //
 // Each blocking handler receives a context with a per-command deadline.
 // Shutdown cancels it immediately. Peer disconnect cancellation is best-effort:
@@ -93,11 +93,11 @@ type Session struct {
 	_ struct{}
 }
 
-// ParameterExtension declares one open-ended EHLO capability whose wire
-// semantics are carried by MAIL FROM or RCPT TO parameters. Keyword is an
-// smtp.Extension rather than a closed enum; Params is the raw EHLO parameter
-// text following the keyword. Command extensions need a dedicated Session
-// callback and must not be declared through this type.
+// ParameterExtension declares one open-ended RFC 5321 §2.2 EHLO capability
+// whose wire semantics are carried by MAIL FROM or RCPT TO parameters. Keyword
+// is an smtp.Extension rather than a closed enum; Params is the raw EHLO
+// parameter text following the keyword. Command extensions need a dedicated
+// Session callback and must not be declared through this type.
 //
 // Callers constructing a ParameterExtension literal must use keyed fields.
 type ParameterExtension struct {
@@ -124,29 +124,33 @@ type ATRNResult struct {
 	_ struct{}
 }
 
-// ResetReason identifies why an SMTP/LMTP transaction ended.
+// ResetReason identifies why an RFC 5321 SMTP or RFC 2033 LMTP transaction
+// ended.
 type ResetReason uint8
 
 const (
-	// ResetExplicit follows RSET.
+	// ResetExplicit follows RFC 5321 RSET.
 	ResetExplicit ResetReason = iota
-	// ResetNewMail precedes MAIL replacing an open transaction.
+	// ResetNewMail precedes RFC 5321 MAIL replacing an open transaction.
 	ResetNewMail
-	// ResetCompleted follows an authoritative DATA or BDAT outcome after the
-	// framework attempted to emit it; write success is not required.
+	// ResetCompleted follows an authoritative RFC 5321 DATA or RFC 3030 BDAT
+	// outcome after the framework attempted to emit it; write success is not
+	// required.
 	ResetCompleted
-	// ResetFailed follows a failed or poisoned DATA/BDAT transaction.
+	// ResetFailed follows a failed or poisoned RFC 5321 DATA or RFC 3030 BDAT
+	// transaction.
 	ResetFailed
 	// ResetStartTLS discards pre-TLS knowledge under RFC 3207 section 4.2.
 	ResetStartTLS
-	// ResetSessionEnd covers QUIT, disconnect, timeout, shutdown and panic
-	// when a transaction is still open.
+	// ResetSessionEnd covers RFC 5321 QUIT, disconnect, timeout, shutdown and
+	// panic when a transaction is still open.
 	ResetSessionEnd
 )
 
 // Credentials carries the distinct identities and secret material extracted
-// at a SASL mechanism's verification point. Mechanism is an open string so a
-// future SASL mechanism can use the generic Authenticate callback.
+// at an RFC 4422 SASL mechanism's RFC 4954 verification point. Mechanism is an
+// open string so a future SASL mechanism can use the generic Authenticate
+// callback.
 //
 // AuthenticationID is SASL authcid; AuthorizationID is authzid. The framework
 // never authorizes one to act as the other. TLS is transport identity and is
@@ -171,9 +175,10 @@ type Credentials struct {
 	_ struct{}
 }
 
-// Challenge carries exact mechanism challenge and response octets. Mechanism
-// is open-ended so future challenge-response SASL mechanisms share the callback
-// without changing its signature.
+// Challenge carries exact RFC 4422 SASL mechanism challenge and response
+// octets used by RFC 4954 AUTH. Mechanism is open-ended so future
+// challenge-response SASL mechanisms share the callback without changing its
+// signature.
 //
 // Callers constructing a Challenge literal must use keyed fields.
 type Challenge struct {
@@ -187,8 +192,8 @@ type Challenge struct {
 	_ struct{}
 }
 
-// AuthResult is an authoritative SASL verification outcome. Failure nil means
-// success. A non-nil Go error from a verifier instead means that no
+// AuthResult is an authoritative RFC 4954 SASL verification outcome. Failure
+// nil means success. A non-nil Go error from a verifier instead means that no
 // authoritative outcome exists.
 //
 // Callers constructing an AuthResult literal must use keyed fields.
@@ -201,8 +206,8 @@ type AuthResult struct {
 	_ struct{}
 }
 
-// AuthFailure is a refused credential, not an error type. Err defaults to
-// 535 5.7.8 when nil. OAuth carries RFC 7628 failure data where applicable.
+// AuthFailure is a refused RFC 4954 credential, not an error type. Err defaults
+// to 535 5.7.8 when nil. OAuth carries RFC 7628 failure data where applicable.
 //
 // Callers constructing an AuthFailure literal must use keyed fields.
 type AuthFailure struct {
@@ -229,8 +234,9 @@ type OAuthError struct {
 	_ struct{}
 }
 
-// SCRAMKeys is stored SCRAM verifier material. Result remains inert until the
-// framework verifies the client proof and passes it to CommitAuth.
+// SCRAMKeys is stored RFC 5802 or RFC 7677 SCRAM verifier material. Result
+// remains inert until the framework verifies the client proof and passes it to
+// CommitAuth.
 //
 // Callers constructing a SCRAMKeys literal must use keyed fields.
 type SCRAMKeys struct {
@@ -248,14 +254,15 @@ type SCRAMKeys struct {
 	_ struct{}
 }
 
-// MailOptions controls one Session.Mail call. Nil means defaults.
+// MailOptions controls one RFC 5321 Session.Mail call. Nil means defaults.
 // Callers constructing a MailOptions literal must use keyed fields.
 type MailOptions struct{ _ struct{} }
 
-// RcptOptions controls one Session.Rcpt call. The framework supplies a
-// non-nil value. A backend may append success continuation lines for an
-// extension such as RFC 4141 CONNEG; each line is emitted under the normal
-// 250 reply after the framework's recipient-accepted first line.
+// RcptOptions controls one RFC 5321 Session.Rcpt call. Nil means defaults, and
+// a backend handler must accept nil. The production framework supplies a
+// non-nil value so a backend may append success continuation lines for an
+// extension such as RFC 4141 CONNEG; each line is emitted under the normal 250
+// reply after the framework's recipient-accepted first line.
 // Callers constructing a RcptOptions literal must use keyed fields.
 type RcptOptions struct {
 	// SuccessLines contains extension-specific successful RCPT reply lines.
@@ -266,58 +273,63 @@ type RcptOptions struct {
 	_ struct{}
 }
 
-// DataOptions controls one Session.Data call. Nil means defaults.
+// DataOptions controls one RFC 5321 DATA, RFC 3030 BDAT, or RFC 2033 LMTP
+// Session.Data call. Nil means defaults.
 // Callers constructing a DataOptions literal must use keyed fields.
 type DataOptions struct{ _ struct{} }
 
-// ResetOptions controls one Session.Reset call. Nil means defaults.
+// ResetOptions controls one RFC 5321 or RFC 2033 Session.Reset call. Nil means
+// defaults.
 // Callers constructing a ResetOptions literal must use keyed fields.
 type ResetOptions struct{ _ struct{} }
 
-// CloseOptions controls one Session.Close call. Nil means defaults.
+// CloseOptions controls one RFC 5321 or RFC 2033 Session.Close call. Nil means
+// defaults.
 // Callers constructing a CloseOptions literal must use keyed fields.
 type CloseOptions struct{ _ struct{} }
 
-// AuthenticateOptions controls one Session.Authenticate call. Nil means
-// defaults. Callers constructing an AuthenticateOptions literal must use keyed
-// fields.
+// AuthenticateOptions controls one RFC 4954 Session.Authenticate call. Nil
+// means defaults. Callers constructing an AuthenticateOptions literal must use
+// keyed fields.
 type AuthenticateOptions struct{ _ struct{} }
 
-// ChallengeOptions controls one Session.ChallengeResponse call. Nil means
-// defaults. Callers constructing a ChallengeOptions literal must use keyed
-// fields.
+// ChallengeOptions controls one RFC 4954 Session.ChallengeResponse call. Nil
+// means defaults. Callers constructing a ChallengeOptions literal must use
+// keyed fields.
 type ChallengeOptions struct{ _ struct{} }
 
-// SCRAMOptions controls one Session.SCRAMCredentials call. Nil means defaults.
+// SCRAMOptions controls one RFC 5802 or RFC 7677 Session.SCRAMCredentials call.
+// Nil means defaults.
 // Callers constructing a SCRAMOptions literal must use keyed fields.
 type SCRAMOptions struct{ _ struct{} }
 
-// CommitAuthOptions controls one Session.CommitAuth call. Nil means defaults.
+// CommitAuthOptions controls the RFC 4954 Session.CommitAuth point. Nil means
+// defaults.
 // Callers constructing a CommitAuthOptions literal must use keyed fields.
 type CommitAuthOptions struct{ _ struct{} }
 
-// VerifyOptions controls one Session.Verify call. Nil means defaults.
+// VerifyOptions controls one RFC 5321 Session.Verify call. Nil means defaults.
 // Callers constructing a VerifyOptions literal must use keyed fields.
 type VerifyOptions struct{ _ struct{} }
 
-// ExpandOptions controls one Session.Expand call. Nil means defaults.
+// ExpandOptions controls one RFC 5321 Session.Expand call. Nil means defaults.
 // Callers constructing an ExpandOptions literal must use keyed fields.
 type ExpandOptions struct{ _ struct{} }
 
-// HelpOptions controls one Session.Help call. Nil means defaults.
+// HelpOptions controls one RFC 5321 Session.Help call. Nil means defaults.
 // Callers constructing a HelpOptions literal must use keyed fields.
 type HelpOptions struct{ _ struct{} }
 
-// ETRNOptions controls one Session.ETRN call. Nil means defaults.
+// ETRNOptions controls one RFC 1985 Session.ETRN call. Nil means defaults.
 // Callers constructing an ETRNOptions literal must use keyed fields.
 type ETRNOptions struct{ _ struct{} }
 
-// ATRNOptions controls one Session.ATRN authorization and queue decision.
-// Nil means defaults.
+// ATRNOptions controls one RFC 2645 Session.ATRN authorization and queue
+// decision. Nil means defaults.
 // Callers constructing an ATRNOptions literal must use keyed fields.
 type ATRNOptions struct{ _ struct{} }
 
-// ATRNTakeoverOptions controls one successful ATRNResult.Takeover call. Nil
-// means defaults.
+// ATRNTakeoverOptions controls one successful RFC 2645 ATRNResult.Takeover
+// call. Nil means defaults.
 // Callers constructing an ATRNTakeoverOptions literal must use keyed fields.
 type ATRNTakeoverOptions struct{ _ struct{} }

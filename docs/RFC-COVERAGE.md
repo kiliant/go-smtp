@@ -19,11 +19,19 @@ default interop matrix drives the public transaction API through seven real
 servers. Rows are promoted to `verified` only where at least two independent
 servers exercise the capability itself, not merely advertise it.
 
+The server column records what `smtpserver` can receive or advertise. T22's
+`gosmtp` matrix profile asserts every implemented advertised keyword, drives all
+typed Group B/C MAIL and RCPT parameter families into a recording backend, and
+accepts relays from Postfix SMTP, Postfix LMTP and Exim SMTP. Those checks make a
+server row `done`; `verified` remains reserved for exercising the same capability
+against two independent implementations, so the in-process reference server is
+not counted as independent from this library's client.
+
 ## Base — RFC 5321 core and the session extensions
 
 | Capability | RFC | Client task | Client status | Server task | Server status |
 |---|---|---|---|---|---|
-| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | verified [^core] | T20 | done |
+| SMTP core (HELO/EHLO/MAIL/RCPT/DATA/RSET/NOOP/QUIT) | 5321 | T01,T02,T03,T05 | verified [^core] | T20 | done [^server-m6] |
 | VRFY | 5321 | T05 | done [^vrfy] | T20 | done |
 | EXPN | 5321 | T05 | done | T20 | done |
 | HELP | 5321 | T05 | done | T20 | done |
@@ -32,7 +40,7 @@ servers exercise the capability itself, not merely advertise it.
 | PIPELINING | 2920 | T03 | verified [^pipelining] | T20 | done |
 | ENHANCEDSTATUSCODES | 2034 | T01,T02,T03 | done [^esc] | T20 | done |
 | AUTH | 4954 | T04 | done | T20 | done |
-| LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | done [^lmtp] | T20 | done |
+| LMTP (`LHLO`, per-recipient DATA replies) | 2033 | T07 | done [^lmtp] | T20 | done [^server-m6] |
 | `Received:` trace-field generation | 5321 §4.4 | — | — | T17,T20 | done [^received] |
 | `Received:` `WITH` transmission types | 3848 | — | — | T17,T20 | done [^received] |
 
@@ -75,6 +83,12 @@ servers exercise the capability itself, not merely advertise it.
     checked against IANA's *Mail Transmission Types for the "Received:" Header
     Field* registry on 2026-08-12; the authenticated and/or TLS variants cite
     RFC 3848 there.
+
+[^server-m6]: T22's `gosmtp` target is a default matrix entry. Postfix and Exim
+    relay real SMTP messages through it, and a separate Postfix LMTP transport
+    submits two recipients and drains its queue only after consuming both
+    per-recipient replies. See
+    `interop/servers/gosmtp/external_sender_interop_test.go`.
 
 ## Group A — transport core (task T08)
 

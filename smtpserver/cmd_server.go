@@ -15,7 +15,8 @@ import (
 	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
-// ServeOptions configures one call to Server.Serve. Nil means defaults.
+// ServeOptions configures one RFC 5321 SMTP or RFC 2033 LMTP call to
+// Server.Serve. Nil means defaults.
 // Callers constructing a ServeOptions literal must use keyed fields.
 type ServeOptions struct{ _ struct{} }
 

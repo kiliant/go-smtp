@@ -37,10 +37,13 @@ var defaultAuthMechanismsAfterTLS = []string{
 	"LOGIN",
 }
 
-// ServerOptions configures one SMTP or LMTP server instance. Spool and
-// connection bounds are instance-wide, not process-wide: two Server values have
-// independent budgets. Nil means defaults, but Listener and Backend remain
-// required and NewServer reports their absence.
+// ServerOptions configures one RFC 5321 SMTP or RFC 2033 LMTP server instance.
+// Spool and connection bounds are instance-wide, not process-wide: two Server
+// values have independent budgets. RFC 3030 BDAT content is accepted into the
+// bounded spool in full before Session.Data is called; RFC 5321 DATA streams
+// directly to Session.Data and applies TCP backpressure to the peer. Nil means
+// defaults, but Listener and Backend remain required and NewServer reports
+// their absence.
 //
 // Callers constructing a ServerOptions literal must use keyed fields.
 type ServerOptions struct {
@@ -125,8 +128,9 @@ type ServerOptions struct {
 	_ struct{}
 }
 
-// Server owns one SMTP or LMTP listener, its active connections and its bounded
-// CHUNKING spool budget. Construct one with NewServer.
+// Server owns one RFC 5321 SMTP or RFC 2033 LMTP listener, its active
+// connections and its bounded RFC 3030 CHUNKING spool budget. Construct one
+// with NewServer.
 type Server struct {
 	listener        net.Listener
 	backend         *Backend
@@ -155,9 +159,10 @@ type Server struct {
 	served       bool
 }
 
-// NewServer validates opts and constructs one server instance. It performs no
-// network I/O. Every configuration defect is reported in the returned error so
-// an operator can fix one startup failure instead of discovering them serially.
+// NewServer validates opts and constructs one RFC 5321 SMTP or RFC 2033 LMTP
+// server instance. It performs no network I/O. Every configuration defect is
+// reported in the returned error so an operator can fix one startup failure
+// instead of discovering them serially.
 func NewServer(opts *ServerOptions) (*Server, error) {
 	var value ServerOptions
 	if opts != nil {
@@ -308,9 +313,10 @@ func NewServer(opts *ServerOptions) (*Server, error) {
 	}, nil
 }
 
-// Shutdown stops accepting new connections, cancels active handler contexts,
-// and waits for connections to leave at a protocol-legal point. When ctx
-// expires, it force-closes remaining transports and returns ctx.Err().
+// Shutdown stops accepting new RFC 5321 SMTP or RFC 2033 LMTP connections,
+// cancels active handler contexts, and waits for connections to leave at a
+// protocol-legal point. When ctx expires, it force-closes remaining transports
+// and returns ctx.Err().
 func (s *Server) Shutdown(ctx context.Context, opts *ShutdownOptions) error {
 	if ctx == nil {
 		panic("smtpserver: nil context")
@@ -326,13 +332,15 @@ func (s *Server) Shutdown(ctx context.Context, opts *ShutdownOptions) error {
 	return s.shutdownErr
 }
 
-// ShutdownOptions controls Server.Shutdown. Nil means defaults.
+// ShutdownOptions controls RFC 5321 or RFC 2033 Server.Shutdown. Nil means
+// defaults.
 // Callers constructing a ShutdownOptions literal must use keyed fields.
 type ShutdownOptions struct{ _ struct{} }
 
-// ErrorEvent reports one operational framework or backend-contract defect.
-// It is not a protocol error model: SMTP/LMTP failures remain *smtp.Error.
-// Connection is nil when the defect is not associated with one peer.
+// ErrorEvent reports one operational RFC 5321 SMTP or RFC 2033 LMTP framework
+// or backend-contract defect. It is not a protocol error model: SMTP/LMTP
+// failures remain *smtp.Error. Connection is nil when the defect is not
+// associated with one peer.
 //
 // Callers receive ErrorEvent values; tests constructing one must use keyed
 // fields.

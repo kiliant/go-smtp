@@ -1,6 +1,7 @@
-// Package backendtest provides a reusable conformance check for smtpserver
-// backends. It drives only the backend contract; production SMTP command
-// handling remains package smtpserver's responsibility.
+// Package backendtest provides a reusable RFC 5321 SMTP and RFC 2033 LMTP
+// conformance check for smtpserver backends. It drives only the backend
+// contract; production command handling remains package smtpserver's
+// responsibility.
 package backendtest
 
 import (
@@ -14,9 +15,9 @@ import (
 	"github.com/kiliant/go-smtp/smtpserver"
 )
 
-// Options supplies one transaction the backend is expected to accept. Nil
-// selects deterministic defaults. Recipients retain order and duplicates so
-// LMTP cardinality is checked exactly.
+// Options supplies one RFC 5321 SMTP or RFC 2033 LMTP transaction the backend
+// is expected to accept. Nil selects deterministic defaults. Recipients retain
+// order and duplicates so LMTP cardinality is checked exactly.
 //
 // Callers constructing an Options literal must use keyed fields.
 type Options struct {
@@ -32,10 +33,10 @@ type Options struct {
 	_ struct{}
 }
 
-// Run checks backend construction, required handlers, authentication field
-// pairing, one complete transaction, SMTP/LMTP result cardinality and order,
-// every ResetReason, and idempotent Close. It reports each independent defect
-// through t instead of stopping at the first.
+// Run checks RFC 5321 SMTP and RFC 2033 LMTP backend construction, required
+// handlers, authentication field pairing, one complete transaction, result
+// cardinality and order, every ResetReason, and idempotent Close. It reports
+// each independent defect through t instead of stopping at the first.
 func Run(ctx context.Context, t *testing.T, backend *smtpserver.Backend, opts *Options) {
 	t.Helper()
 	for _, problem := range check(ctx, backend, normalizedOptions(opts)) {

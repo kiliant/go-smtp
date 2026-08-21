@@ -6,9 +6,10 @@ import (
 	"net"
 )
 
-// Mode identifies the protocol spoken by one listener. SMTP and LMTP are the
-// two modes defined today. Mode is string-backed so a caller receiving a future
-// mode can preserve and report it rather than treating it as impossible.
+// Mode identifies the protocol spoken by one listener. RFC 5321 SMTP and RFC
+// 2033 LMTP are the two modes defined today. Mode is string-backed so a caller
+// receiving a future mode can preserve and report it rather than treating it
+// as impossible.
 type Mode string
 
 const (
@@ -18,7 +19,8 @@ const (
 	ModeLMTP Mode = "lmtp"
 )
 
-// Backend is shared by every connection and must be safe for concurrent use.
+// Backend supplies RFC 5321 SMTP and RFC 2033 LMTP sessions. It is shared by
+// every connection and must be safe for concurrent use.
 // NewSession is required. Future ESMTP extensions add fields to Backend or
 // Session; they never add methods to an exported interface.
 //
@@ -32,7 +34,8 @@ type Backend struct {
 	_ struct{}
 }
 
-// ConnInfo describes one accepted connection without exposing its net.Conn.
+// ConnInfo describes one accepted RFC 5321 SMTP or RFC 2033 LMTP connection
+// without exposing its net.Conn.
 // Exposing the transport would let a backend interfere with protocol framing.
 // TLSState reports the current state and therefore changes after STARTTLS; it
 // returns nil while the connection is plaintext.
@@ -53,7 +56,8 @@ type ConnInfo struct {
 	_ struct{}
 }
 
-// NewSessionOptions controls one Backend.NewSession call. Nil means defaults.
+// NewSessionOptions controls one Backend.NewSession call for RFC 5321 SMTP or
+// RFC 2033 LMTP. Nil means defaults.
 //
 // Callers constructing a NewSessionOptions literal must use keyed fields.
 type NewSessionOptions struct {

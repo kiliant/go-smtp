@@ -54,12 +54,20 @@ mkdir -p "$OUT/logs"
 
 # --- discovery -------------------------------------------------------------
 all=()
-for pkg in $(go list "${tagargs[@]}" ./... 2>/dev/null); do
-  names=$(go test "${tagargs[@]}" -list '^Fuzz' "$pkg" 2>/dev/null | grep '^Fuzz' || true)
-  for name in $names; do
-    all+=("${pkg}:${name}")
-  done
-done
+# Go commands do not cross nested-module boundaries for ./.... Discover every
+# checked-in module first, then discover its packages. This keeps both the
+# module set and target set data-driven as independently versioned modules are
+# added to the repository.
+while IFS= read -r modfile; do
+  module_dir="${modfile%/go.mod}"
+  [ "$module_dir" = "$modfile" ] && module_dir=.
+  while IFS= read -r pkg; do
+    names=$(go test "${tagargs[@]}" -list '^Fuzz' "$pkg" 2>/dev/null | grep '^Fuzz' || true)
+    for name in $names; do
+      all+=("${pkg}:${name}")
+    done
+  done < <(cd "$module_dir" && go list "${tagargs[@]}" ./... 2>/dev/null)
+done < <(find . -name go.mod -not -path './.git/*' -print | sort)
 
 if [ "${#all[@]}" -eq 0 ]; then
   echo "no fuzz targets discovered" >&2
