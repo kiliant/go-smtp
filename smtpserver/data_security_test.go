@@ -2,7 +2,6 @@ package smtpserver
 
 import (
 	"errors"
-	"net"
 	"testing"
 	"time"
 
@@ -37,16 +36,8 @@ func TestDATAPathRejectsSMTPSmuggling(t *testing.T) {
 			harness.wantCommand("DATA", 354)
 
 			writeTestCommand(t, harness.conn, test.wire)
-			if err := harness.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-				t.Fatal(err)
-			}
-			if line, err := harness.reader.ReadString('\n'); err == nil {
-				t.Fatalf("server replied after smuggling marker: %q", line)
-			} else {
-				var timeout net.Error
-				if errors.As(err, &timeout) && timeout.Timeout() {
-					t.Fatalf("server hung after smuggling marker: %v", err)
-				}
+			if err := harness.readUntilClose(); err == nil {
+				t.Fatal("server replied after smuggling marker")
 			}
 
 			select {

@@ -1,9 +1,7 @@
 package smtpserver
 
 import (
-	"net"
 	"testing"
-	"time"
 )
 
 func TestBDATBoundarySecurityCases(t *testing.T) {
@@ -43,13 +41,8 @@ func TestBDATBoundarySecurityCases(t *testing.T) {
 		if code, _ := readTestReplyDetails(t, harness.reader); code != 501 {
 			t.Fatalf("overflow BDAT reply = %d, want 501", code)
 		}
-		if err := harness.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := harness.reader.ReadString('\n'); err == nil {
+		if err := harness.readUntilClose(); err == nil {
 			t.Fatal("connection remained open after unframeable BDAT size")
-		} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
-			t.Fatalf("server hung after unframeable BDAT size: %v", err)
 		}
 		if calls := backend.dataCallCount(); calls != 0 {
 			t.Fatalf("Session.Data calls = %d, want 0", calls)

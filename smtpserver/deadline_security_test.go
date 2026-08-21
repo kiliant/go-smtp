@@ -77,16 +77,8 @@ func TestContentDisconnectsAndDeadlineTerminateWithoutGoroutineLeak(t *testing.T
 		})
 		beginDataSecurityTransaction(t, harness)
 		harness.wantCommand("DATA", 354)
-		if err := harness.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := harness.reader.ReadString('\n'); err == nil {
+		if err := harness.readUntilClose(); err == nil {
 			t.Fatal("server replied instead of terminating after DATA timeout")
-		} else {
-			var timeout net.Error
-			if errors.As(err, &timeout) && timeout.Timeout() {
-				t.Fatalf("client deadline fired before server terminated: %v", err)
-			}
 		}
 		waitForSessionClose(t, closed)
 		waitForResetReason(t, backend, ResetSessionEnd)

@@ -1,9 +1,7 @@
 package smtpserver
 
 import (
-	"net"
 	"testing"
-	"time"
 )
 
 func TestBDATInvalidNextCommandPoisonsTransactionAndPreservesFraming(t *testing.T) {
@@ -47,12 +45,7 @@ func TestMalformedCommandWithoutActiveBDATKeepsConnectionFailureBehavior(t *test
 	harness := newRawTestServer(t, ModeSMTP, newCommandTestBackend(ModeSMTP).backend(), enableTestChunking)
 	harness.wantCommand("EHLO client.example", 250)
 	writeTestCommand(t, harness.conn, "!BAD\r\n")
-	if err := harness.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := harness.reader.ReadString('\n'); err == nil {
+	if err := harness.readUntilClose(); err == nil {
 		t.Fatal("malformed command outside BDAT received a reply instead of closing the connection")
-	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
-		t.Fatalf("server did not preserve malformed-command connection failure: %v", err)
 	}
 }
