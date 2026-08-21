@@ -96,13 +96,8 @@ func TestBackendPanicReleasesSpoolFileAndSession(t *testing.T) {
 	})
 	beginDataSecurityTransaction(t, harness)
 	writeTestCommand(t, harness.conn, "BDAT 2 LAST\r\nab")
-	if err := harness.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := harness.reader.ReadString('\n'); err == nil {
+	if err := harness.readUntilClose(); err == nil {
 		t.Fatal("server replied after backend panic")
-	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
-		t.Fatalf("server hung after backend panic: %v", err)
 	}
 	waitForSessionClose(t, closed)
 	waitForResetReason(t, state, ResetSessionEnd)

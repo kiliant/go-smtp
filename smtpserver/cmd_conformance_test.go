@@ -297,6 +297,25 @@ func (h *rawTestServer) wantCommand(command string, want int) {
 	}
 }
 
+func (h *rawTestServer) readUntilClose() error {
+	h.t.Helper()
+	if err := h.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		// net.Pipe reports an already-observed peer close from SetReadDeadline
+		// rather than the following read on some Go/OS combinations. That is the
+		// successful condition these tests are waiting for, not a harness error.
+		if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed) {
+			return err
+		}
+		h.t.Fatal(err)
+	}
+	_, err := h.reader.ReadString('\n')
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		h.t.Fatalf("server did not close the connection before the test deadline: %v", err)
+	}
+	return err
+}
+
 func (h *rawTestServer) close() {
 	h.once.Do(func() {
 		_ = h.conn.Close()

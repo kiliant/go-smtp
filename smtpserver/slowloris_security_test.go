@@ -103,16 +103,8 @@ func runSlowLorisCase(t *testing.T, test slowLorisCase) {
 		opts.ErrorLog = func(event ErrorEvent) { logged <- event.Err }
 	})
 	test.start(t, harness)
-	if err := harness.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := harness.reader.ReadString('\n'); err == nil {
+	if err := harness.readUntilClose(); err == nil {
 		t.Fatal("server replied instead of terminating the slow peer")
-	} else {
-		var timeout net.Error
-		if errors.As(err, &timeout) && timeout.Timeout() {
-			t.Fatalf("client guard deadline fired before server deadline: %v", err)
-		}
 	}
 	waitForSessionClose(t, closed)
 	if test.wantReset {

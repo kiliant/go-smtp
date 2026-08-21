@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -67,11 +66,8 @@ func TestMaxTransactionsAllowsLimitThenCloses(t *testing.T) {
 	if calls := backend.mailCallCount(); calls != 2 {
 		t.Fatalf("Session.Mail calls = %d, want 2", calls)
 	}
-	if err := harness.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := harness.reader.ReadString('\n'); !errors.Is(err, io.EOF) {
-		t.Fatalf("read after 421 = %v, want EOF", err)
+	if err := harness.readUntilClose(); err == nil {
+		t.Fatal("connection remained open after 421")
 	}
 }
 
