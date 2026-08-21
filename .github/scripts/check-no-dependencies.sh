@@ -19,11 +19,18 @@ cd "$ROOT"
 ROOT_MODULE="$(GOWORK=off go list -m)"
 status=0
 
+# Inspect module declarations without resolving them while a release PR is under
+# review. A nested module can require a root version whose tag is part of the
+# same release, so its downloadable graph does not exist until after that PR
+# merges and the root tag is published. The release procedure separately checks
+# the standalone module after publishing the root tag.
+mapfile -t MODFILES < <(find . -name go.mod -not -path './.git/*' -print | sort)
+
 # The repository may contain nested modules. Their only permitted non-stdlib
 # dependency is the released root module itself; API-STABILITY.md §9 records
 # why that self-reference is controlled rather than external. Discover modules
 # from go.mod files so adding one cannot silently evade this gate.
-while IFS= read -r modfile; do
+for modfile in "${MODFILES[@]}"; do
   module_dir="${modfile%/go.mod}"
   [ "$module_dir" = "$modfile" ] && module_dir=.
   module="$(cd "$module_dir" && GOWORK=off go list -m)"
@@ -54,15 +61,29 @@ while IFS= read -r modfile; do
     echo "ok: no replace directive"
   fi
 
-  # 3. The complete standalone graph is either just the root module or a
-  # nested module plus that root. go.sum cannot hide a transitive addition.
-  mods="$(cd "$module_dir" && GOWORK=off go list -m all)"
-  unexpected="$(printf '%s\n' "$mods" | awk -v self="$module" -v root="$ROOT_MODULE" '$1 != self && $1 != root')"
+  # 3. The declared graph is either empty for the root or contains only the
+  # root for a nested module. Because every repository module is checked, this
+  # recursively proves the complete graph without downloading an unpublished
+  # release tag.
+  requirements="$(go mod edit -json "$modfile" | awk '
+    /^[[:space:]]*"Require": \[/ { in_require = 1; next }
+    in_require && /^[[:space:]]*\]/ { in_require = 0 }
+    in_require && /"Path": "/ {
+      sub(/^.*"Path": "/, "")
+      sub(/".*$/, "")
+      print
+    }
+  ')"
+  if [ "$module" = "$ROOT_MODULE" ]; then
+    unexpected="$requirements"
+  else
+    unexpected="$(printf '%s\n' "$requirements" | awk -v root="$ROOT_MODULE" 'NF && $1 != root')"
+  fi
   if [ -n "$unexpected" ]; then
     echo "FAIL: $module has unexpected module dependencies:" >&2
     echo "$unexpected" >&2
     status=1
-  elif [ "$module" != "$ROOT_MODULE" ] && ! printf '%s\n' "$mods" | grep -q "^${ROOT_MODULE//./\\.} "; then
+  elif [ "$module" != "$ROOT_MODULE" ] && ! printf '%s\n' "$requirements" | grep -qx "$ROOT_MODULE"; then
     echo "FAIL: nested module $module does not depend on a released $ROOT_MODULE" >&2
     status=1
   else
@@ -91,6 +112,6 @@ while IFS= read -r modfile; do
       echo "ok: repository/stdlib-only imports with tags '${tags:-<none>}'"
     fi
   done
-done < <(find . -name go.mod -not -path './.git/*' -print | sort)
+done
 
 exit "$status"
