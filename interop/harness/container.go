@@ -11,6 +11,15 @@ import (
 	"sync"
 )
 
+const imagePullAttempts = 3
+
+// imageStoreMu serializes operations that populate Podman's shared image
+// store. Matrix profiles start in parallel, but concurrent cold pulls and
+// builds can race in the storage driver and leave a layer only partly
+// unpacked. Container startup and health checks remain parallel once each
+// image is ready.
+var imageStoreMu sync.Mutex
+
 // RunConfig describes one container to start. Construct with keyed fields:
 // new fields (health-check commands, resource limits) are expected as more
 // server profiles are added.
@@ -78,6 +87,9 @@ func runPodman(ctx context.Context, podman string, args ...string) (stdout, stde
 // BuildImage builds dir's Containerfile and tags it tag. It is used for
 // servers with no maintained multi-arch published image.
 func BuildImage(ctx context.Context, dir, tag string) error {
+	imageStoreMu.Lock()
+	defer imageStoreMu.Unlock()
+
 	podman, err := podmanBinary()
 	if err != nil {
 		return err
@@ -87,6 +99,37 @@ func BuildImage(ctx context.Context, dir, tag string) error {
 		return fmt.Errorf("harness: podman build %s: %w: %s", dir, err, strings.TrimSpace(stderr))
 	}
 	return nil
+}
+
+// prepareImage makes a published image available before podman run. Pulling
+// explicitly lets the harness retry transient registry/storage failures and
+// prevents podman run from starting an implicit pull alongside another
+// profile's build.
+func prepareImage(ctx context.Context, podman, image string) error {
+	imageStoreMu.Lock()
+	defer imageStoreMu.Unlock()
+
+	if _, _, err := runPodman(ctx, podman, "image", "exists", image); err == nil {
+		return nil
+	}
+
+	var (
+		attempts int
+		stderr   string
+		err      error
+	)
+	for attempts < imagePullAttempts {
+		attempts++
+		_, stderr, err = runPodman(ctx, podman, "pull", image)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return fmt.Errorf("harness: podman pull %s after %d attempts: %w: %s",
+		image, attempts, err, strings.TrimSpace(stderr))
 }
 
 // Run starts a container per cfg and returns a Handle once podman reports it
@@ -106,8 +149,10 @@ func Run(ctx context.Context, cfg RunConfig) (*Handle, error) {
 		if err := BuildImage(ctx, cfg.ContainerfileDir, image); err != nil {
 			return nil, err
 		}
+	} else if err := prepareImage(ctx, podman, image); err != nil {
+		return nil, err
 	}
-	args := []string{"run", "-d", "--name", cfg.Name}
+	args := []string{"run", "--pull=never", "-d", "--name", cfg.Name}
 	for _, cap := range cfg.CapAdd {
 		args = append(args, "--cap-add="+cap)
 	}
