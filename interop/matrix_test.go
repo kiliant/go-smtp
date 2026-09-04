@@ -166,9 +166,8 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 	body := []byte("From: " + recipient + "\r\nTo: " + recipient + "\r\nSubject: go-smtp interop smoke\r\n\r\n")
 	body = append(body, fixture.Body...)
 
-	seedCtx, seedCancel := context.WithTimeout(ctx, cfg.CommandTimeout)
-	defer seedCancel()
-	if err := seedMessage(seedCtx, addr, recipient, body, lmtp); err != nil {
+	if err := seedMessage(ctx, cfg.CommandTimeout, addr, recipient, body, lmtp); err != nil {
+		logRuntimeLogs(t, p.Name, h, cfg.StopTimeout)
 		t.Fatalf("%s: seeding smoke message: %v", p.Name, err)
 	}
 
@@ -176,9 +175,7 @@ func runProfile(t *testing.T, cfg harness.Config, p harness.Profile) {
 	defer sinkCancel()
 	got, err := harness.WaitForMessage(sinkCtx, sink, recipient)
 	if err != nil {
-		if logs, logErr := h.Logs(context.Background()); logErr == nil && logs != "" {
-			t.Logf("%s runtime logs:\n%s", p.Name, logs)
-		}
+		logRuntimeLogs(t, p.Name, h, cfg.StopTimeout)
 		t.Fatalf("%s: reading back the seeded message: %v", p.Name, err)
 	}
 	// Two normalisations account for real, observed server behavior rather
@@ -209,28 +206,59 @@ func normalizeCRLF(b []byte) []byte {
 // plain SMTP port and deliberately avoids opportunistic STARTTLS here: TLS
 // policy is validated separately, while self-signed server certificates would
 // make this byte-transparency smoke test depend on per-profile trust setup.
-func seedMessage(ctx context.Context, addr, rcpt string, body []byte, lmtp bool) error {
-	c, err := smtpclient.Dial(ctx, &smtpclient.ClientOptions{
+func seedMessage(ctx context.Context, commandTimeout time.Duration, addr, rcpt string, body []byte, lmtp bool) error {
+	dialCtx, cancel := context.WithTimeout(ctx, commandTimeout)
+	c, err := smtpclient.Dial(dialCtx, &smtpclient.ClientOptions{
 		Address:         addr,
 		Identity:        "interop-client.example.test",
 		LMTP:            lmtp,
-		GreetingTimeout: 10 * time.Second,
-		MailTimeout:     10 * time.Second,
+		GreetingTimeout: commandTimeout,
+		MailTimeout:     commandTimeout,
 	})
+	cancel()
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	if err := c.Mail(ctx, rcpt, nil, nil); err != nil {
+	if err := withCommandTimeout(ctx, commandTimeout, func(commandCtx context.Context) error {
+		return c.Mail(commandCtx, rcpt, nil, nil)
+	}); err != nil {
 		return err
 	}
-	if err := c.Rcpt(ctx, rcpt, nil, nil); err != nil {
+	if err := withCommandTimeout(ctx, commandTimeout, func(commandCtx context.Context) error {
+		return c.Rcpt(commandCtx, rcpt, nil, nil)
+	}); err != nil {
 		return err
 	}
-	if _, err := c.Data(ctx, bytes.NewReader(body), nil); err != nil {
+	if err := withCommandTimeout(ctx, commandTimeout, func(commandCtx context.Context) error {
+		_, err := c.Data(commandCtx, bytes.NewReader(body), nil)
+		return err
+	}); err != nil {
 		return err
 	}
-	return c.Quit(ctx, nil)
+	return withCommandTimeout(ctx, commandTimeout, func(commandCtx context.Context) error {
+		return c.Quit(commandCtx, nil)
+	})
+}
+
+func withCommandTimeout(ctx context.Context, timeout time.Duration, command func(context.Context) error) error {
+	commandCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return command(commandCtx)
+}
+
+func logRuntimeLogs(t *testing.T, profile string, h *harness.Handle, timeout time.Duration) {
+	t.Helper()
+	logsCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	logs, err := h.Logs(logsCtx)
+	if err != nil {
+		t.Logf("%s runtime logs unavailable: %v", profile, err)
+		return
+	}
+	if logs != "" {
+		t.Logf("%s runtime logs:\n%s", profile, logs)
+	}
 }
 
 func logTranscript(t *testing.T, r *harness.Result) {
