@@ -34,7 +34,10 @@ func (s *imapSink) Fetch(ctx context.Context, recipient string) ([]harness.Messa
 		return nil, err
 	}
 	defer c.close()
+	return c.fetchInbox(recipient)
+}
 
+func (c *imapConn) fetchInbox(recipient string) ([]harness.Message, error) {
 	status, _, err := c.command("SELECT INBOX")
 	if err != nil {
 		return nil, fmt.Errorf("james sink: select INBOX: %w", err)
@@ -50,6 +53,13 @@ func (s *imapSink) Fetch(ctx context.Context, recipient string) ([]harness.Messa
 	}
 
 	status, literals, err := c.command("FETCH 1:* BODY.PEEK[]")
+	if status == "BAD" && strings.Contains(strings.ToLower(err.Error()), "invalid messageset") {
+		// Observed under emulation: a SELECT racing a delivery commit can
+		// report EXISTS for a message the session cannot address yet. Report
+		// it as not yet visible so WaitForMessage polls again; a delivery
+		// that never becomes readable still fails at SinkTimeout.
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("james sink: fetch INBOX: %w", err)
 	}
