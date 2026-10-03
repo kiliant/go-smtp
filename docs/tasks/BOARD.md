@@ -63,6 +63,7 @@ owner:
 | `api_surface_test.go` | T02 | T12 (T25 has a scoped grant to add `smtpdeliver` to its package lists) |
 | `smtpdeliver/attempt_deliver.go` | T25 (the `Deliver` stub) | T29 |
 | `smtpdeliver/mtasts_refresh.go` | T25 (the `RefreshPolicy` stub) | T27 |
+| `smtpdeliver/mtasts_memory.go` | T25 (the `NewMemoryPolicyCache` stub) | T27 |
 
 ## Tasks
 

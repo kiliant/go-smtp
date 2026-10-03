@@ -18,6 +18,11 @@ outcomes rather than repeating commit messages.
   caller can tell a possibly accepted message from one that certainly failed
   and avoid duplicate deliveries on retry. The original cause stays reachable
   through `errors.Is` and `errors.As`.
+- **New package `smtpdeliver`** (in progress on the integration branch; not
+  released until its API review): the delivery attempt layer from
+  `docs/DELIVERY-DESIGN.md`. This entry covers its exported types,
+  configuration validation and standard-library resolver; routing, MTA-STS,
+  DANE and the attempt engine follow.
 
 ### Changed
 
