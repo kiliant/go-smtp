@@ -145,6 +145,21 @@ Neither may pull scope forward into the client. Durable queues, retry
 scheduling, bounce generation, mailbox storage, spam filtering and full MTA
 behaviour are out of scope at every milestone.
 
+## M7 — The delivery layer (T24–T31)
+
+`smtpdeliver`, implementing the approved `docs/DELIVERY-DESIGN.md` (revision
+2). It covers MX routing, null MX, MTA-STS, optional DANE through a
+caller-supplied DNSSEC-aware resolver, and exact per-recipient outcomes. T24
+first adds the one root client signal the design requires,
+`smtpclient.ErrFinalStatusUnknown`.
+
+**Exit:** api-guardian has approved the complete `smtpdeliver` surface. Every
+row of the design's MX, MTA-STS, TLS and disposition tables has a test. The
+mutation records for null MX, expired policy, DANE failure and lost final reply
+exist. Fuzz (long) and the delivery interop suite are green on the release tree.
+The package ships in a root **minor** release (`v1.2.0` at the earliest), and is
+therefore stable from its first tag.
+
 ## Sequencing
 
 ```
