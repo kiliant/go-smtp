@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -614,5 +616,323 @@ func TestDeliverMandatoryDANEInsecureMX(t *testing.T) {
 	}
 	if len(dr.Policies) != 1 || dr.Policies[0].Kind != PolicyDANE || !errors.Is(dr.Policies[0].Cause, errDANEInsecureMX) {
 		t.Errorf("destination policies = %+v, want the mandatory-DANE failure recorded once", dr.Policies)
+	}
+}
+
+// --- T29 review regressions -------------------------------------------------
+
+func twoMX(t *testing.T, mutate func(*Options), ext ...string) (*engine, *fakePeer, *fakePeer) {
+	t.Helper()
+	e := newEngine(t, mutate)
+	p1, p2 := newFakePeer(t, ext...), newFakePeer(t, ext...)
+	e.net.add("192.0.2.1", p1)
+	e.net.add("192.0.2.2", p2)
+	e.mx("example.com", 10, "mx1.example.com", "192.0.2.1", 20, "mx2.example.com", "192.0.2.2")
+	return e, p1, p2
+}
+
+func countFor(ds []fakeDelivery, rcpt string) int {
+	n := 0
+	for _, d := range ds {
+		for _, r := range d.rcpts {
+			if r == rcpt {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestReviewUnexpected2yzRcptNeverDuplicates(t *testing.T) {
+	e, p1, p2 := twoMX(t, nil)
+	p1.rcpt = func(a string) string {
+		if a == "a@example.com" {
+			return "252 2.1.5 cannot verify, will try"
+		}
+		return "250 ok"
+	}
+	res, err := e.deliver(t, context.Background(), "a@example.com", "b@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p1.delivered()) != 0 {
+		t.Errorf("MX1 received content after an unaccountable 2yz RCPT: %+v", p1.delivered())
+	}
+	all := append(p1.delivered(), p2.delivered()...)
+	for _, r := range []string{"a@example.com", "b@example.com"} {
+		if n := countFor(all, r); n != 1 {
+			t.Errorf("%s received %d copies, want exactly 1", r, n)
+		}
+	}
+	for _, out := range res.Destinations[0].Recipients {
+		if out.Disposition != DispositionDelivered || out.Reply == nil || out.Reply.Recipient != out.Address {
+			t.Errorf("outcome %+v; a reply must belong to its own recipient", out)
+		}
+	}
+}
+
+func TestReviewMismatchedResultIsIndeterminate(t *testing.T) {
+	d, _ := New(&Options{DisableLoopElimination: true})
+	in := attemptInput{recipients: []Recipient{{Address: "a@x"}, {Address: "b@x"}}, indices: []int{0, 1}}
+	out := d.applyContentResult(context.Background(), attemptOutcome{}, in, []int{0, 1}, smtp.DataResult{{Recipient: "b@x", Code: 250}}, nil)
+	for _, dec := range out.decisions {
+		if dec.disposition != DispositionIndeterminate {
+			t.Errorf("decision %+v; an unmatched result must never become temporary or delivered", dec)
+		}
+	}
+}
+
+func TestReviewRequireTLSNotPermanentAfterAQualifyingCandidate(t *testing.T) {
+	pki := newTestPKI(t)
+	cert := pki.leaf(t, "mx2.example.com", []string{"mx1.example.com", "mx2.example.com"}, false).tlsCert()
+	e, p1, p2 := twoMX(t, func(o *Options) { o.TLSConfig = &tls.Config{RootCAs: pki.roots} }, "STARTTLS")
+	p1.cert, p2.cert = &cert, &cert
+	p2.ext = append(p2.ext, "REQUIRETLS")
+	p2.dropOnDATA = true
+	a := mxs(10, "mx1.example.com", 20, "mx2.example.com")
+	a.Security = DNSSECSecure
+	e.dns.setMX("example.com", a, nil)
+	res, err := e.d.Deliver(context.Background(), &Request{MailOptions: &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{RequireTLS: true}}, Message: e.source(testBody), Destinations: oneDestination("example.com", "a@example.com")}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := res.Destinations[0].Recipients[0]; out.Disposition != DispositionTemporary {
+		t.Errorf("outcome = %+v; MX2 met every REQUIRETLS requirement, so a transient fault there is not a permanent bounce", out)
+	}
+}
+
+func TestReviewRequireTLS454IsNotPermanent(t *testing.T) {
+	e, _, _ := twoMX(t, nil, "STARTTLS", "REQUIRETLS") // no certificate: STARTTLS answers 454
+	a := mxs(10, "mx1.example.com", 20, "mx2.example.com")
+	a.Security = DNSSECSecure
+	e.dns.setMX("example.com", a, nil)
+	res, _ := e.d.Deliver(context.Background(), &Request{MailOptions: &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{RequireTLS: true}}, Message: e.source(testBody), Destinations: oneDestination("example.com", "a@example.com")}, nil)
+	if out := res.Destinations[0].Recipients[0]; out.Disposition != DispositionTemporary {
+		t.Errorf("outcome = %+v; a 454 is a temporary condition, not proof the requirements cannot be met", out)
+	}
+}
+
+func TestReviewAttemptCauseOnlyForNonReplyEndings(t *testing.T) {
+	e, p1, _ := twoMX(t, nil)
+	p1.data = func(string) string { return "554 5.6.0 rejected" }
+	res, _ := e.deliver(t, context.Background(), "a@example.com")
+	if at := res.Destinations[0].Attempts[0]; at.Stage != StageComplete || at.Cause != nil {
+		t.Errorf("attempt = %+v; an attempt ending on a final reply has no Cause", at)
+	}
+	e2, q1, _ := twoMX(t, nil)
+	q1.dropOnDATA = true
+	res, _ = e2.deliver(t, context.Background(), "a@example.com")
+	if at := res.Destinations[0].Attempts[0]; at.Stage != StageContent || at.Cause == nil {
+		t.Errorf("attempt = %+v; a connection lost at DATA is a content-stage failure with a Cause", at)
+	}
+}
+
+func TestReviewTransientMAILKeepsReplyAndStatus(t *testing.T) {
+	e, p1, p2 := twoMX(t, nil, "ENHANCEDSTATUSCODES")
+	p1.mail = func(string) string { return "451 4.3.0 try later" }
+	p2.mail = func(string) string { return "451 4.3.0 try later" }
+	res, _ := e.deliver(t, context.Background(), "a@example.com")
+	out := res.Destinations[0].Recipients[0]
+	if out.Disposition != DispositionTemporary || out.Reply == nil || out.Reply.Code != 451 || out.Reply.Command != "MAIL" || out.Status.Raw != "4.3.0" {
+		t.Errorf("outcome = %+v; the 4yz that decided it must be kept for RFC 3464 reports", out)
+	}
+	if at := res.Destinations[0].Attempts[0]; at.Cause != nil {
+		t.Errorf("attempt Cause = %v; it ended on a reply", at.Cause)
+	}
+}
+
+func TestReviewCancelledBeforeWorkReturnsEveryRecipient(t *testing.T) {
+	e := newEngine(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, err := e.d.Deliver(ctx, &Request{Message: e.source(testBody), Destinations: append(oneDestination("example.com", "a@example.com", "b@example.com"), oneDestination("example.org", "c@example.org")...)}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(res.Destinations) != 2 || dispositions(res.Destinations[0]) != "not-attempted,not-attempted" || dispositions(res.Destinations[1]) != "not-attempted" {
+		t.Errorf("result = %+v; a queue requeues exactly these recipients", res)
+	}
+}
+
+func TestReviewRequestErrorsFailBeforeIO(t *testing.T) {
+	cases := []struct {
+		name string
+		req  func(e *engine) *Request
+	}{
+		{"framing character in recipient", func(e *engine) *Request {
+			return &Request{Message: e.source(testBody), Destinations: oneDestination("example.com", "a@example.com", "b>@example.com")}
+		}},
+		{"line break in sender", func(e *engine) *Request {
+			return &Request{EnvelopeFrom: "s@x\r\nRCPT TO:<evil@x>", Message: e.source(testBody), Destinations: oneDestination("example.com", "a@example.com")}
+		}},
+		{"non-ASCII without SMTPUTF8", func(e *engine) *Request {
+			return &Request{Message: e.source(testBody), Destinations: oneDestination("example.com", "jörg@example.com")}
+		}},
+		{"extra parameter keyword starting with '-'", func(e *engine) *Request {
+			return &Request{Message: e.source(testBody), Destinations: []Destination{{Domain: "example.com", Recipients: []Recipient{{Address: "a@example.com", Options: &smtp.RcptOptions{Extra: []smtp.Param{{Keyword: "-X"}}}}}}}}
+		}},
+		{"malformed extra parameter", func(e *engine) *Request {
+			return &Request{MailOptions: &smtp.MailOptions{Extra: []smtp.Param{{Keyword: "X FOO"}}}, Message: e.source(testBody), Destinations: oneDestination("example.com", "a@example.com")}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine(t, nil)
+			if _, err := e.d.Deliver(context.Background(), tc.req(e), nil); err == nil {
+				t.Fatal("Deliver accepted a request no SMTP command can carry")
+			}
+			if len(e.dns.queried()) != 0 || len(e.net.dialed()) != 0 {
+				t.Error("I/O happened before the request was rejected")
+			}
+		})
+	}
+}
+
+func TestReviewCapabilities(t *testing.T) {
+	t.Run("DSN parameters are dropped for a server without DSN", func(t *testing.T) {
+		e, p1, _ := twoMX(t, nil)
+		res, err := e.d.Deliver(context.Background(), &Request{
+			MailOptions:  &smtp.MailOptions{Delivery: &smtp.DeliveryOptions{DSN: &smtp.DSNMailOptions{Return: smtp.DSNReturnHeaders}}},
+			Message:      e.source(testBody),
+			Destinations: []Destination{{Domain: "example.com", Recipients: []Recipient{{Address: "a@example.com", Options: &smtp.RcptOptions{Delivery: &smtp.RecipientDeliveryOptions{DSN: &smtp.DSNRcptOptions{Notify: []smtp.DSNNotify{smtp.DSNNotifyFailure}}}}}}}},
+		}, nil)
+		if err != nil || dispositions(res.Destinations[0]) != "delivered" {
+			t.Fatalf("result = %+v, %v", res, err)
+		}
+		for _, l := range p1.received() {
+			if strings.Contains(l, "NOTIFY=") || strings.Contains(l, "RET=") {
+				t.Errorf("sent %q to a server without DSN", l)
+			}
+		}
+	})
+	for _, tc := range []struct {
+		name      string
+		transport *smtp.TransportOptions
+		status    string
+	}{
+		{"SMTPUTF8 missing everywhere", &smtp.TransportOptions{SMTPUTF8: true}, "5.6.7"},
+		{"8BITMIME missing everywhere", &smtp.TransportOptions{Body: smtp.BodyType8BitMIME}, "5.6.3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, p1, p2 := twoMX(t, nil)
+			res, err := e.d.Deliver(context.Background(), &Request{MailOptions: &smtp.MailOptions{Transport: tc.transport}, Message: e.source(testBody), Destinations: oneDestination("example.com", "a@example.com")}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out := res.Destinations[0].Recipients[0]; out.Disposition != DispositionPermanent || out.Status.Raw != tc.status {
+				t.Errorf("outcome = %+v; RFC 6531 §3.5 / RFC 6152 §3 make this undeliverable, not retryable forever", out)
+			}
+			if len(p1.delivered())+len(p2.delivered()) != 0 {
+				t.Error("the message was sent to a server lacking a required extension")
+			}
+		})
+	}
+}
+
+func TestReviewStopKeepsEarlierFailures(t *testing.T) {
+	e, p1, _ := twoMX(t, nil)
+	p1.rcpt = func(string) string { return "450 4.2.1 busy" }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dial := e.net.dial
+	e.d.dial = func(c context.Context, req *DialRequest) (net.Conn, error) {
+		if req.Address.Addr() == netip.MustParseAddr("192.0.2.2") {
+			cancel()
+			return nil, c.Err()
+		}
+		return dial(c, req)
+	}
+	res, err := e.deliver(t, ctx, "a@example.com")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	if out := res.Destinations[0].Recipients[0]; out.Disposition != DispositionTemporary || out.Reply == nil || out.Reply.Code != 450 {
+		t.Errorf("outcome = %+v; a recipient that already got a 4yz is not 'not attempted'", out)
+	}
+}
+
+func TestReviewCancellationStages(t *testing.T) {
+	t.Run("mid-RCPT", func(t *testing.T) {
+		e, p1, _ := twoMX(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		p1.rcpt = func(string) string { cancel(); time.Sleep(50 * time.Millisecond); return "250 ok" }
+		res, err := e.deliver(t, ctx, "a@example.com")
+		if !errors.Is(err, context.Canceled) || dispositions(res.Destinations[0]) != "not-attempted" || len(p1.delivered()) != 0 {
+			t.Errorf("result = %+v, %v", res, err)
+		}
+	})
+	t.Run("mid-content", func(t *testing.T) {
+		e, p1, _ := twoMX(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		e.d.resolver = e.dns.resolver()
+		src := MessageSource{Open: func(context.Context, *OpenMessageOptions) (io.ReadCloser, error) {
+			return io.NopCloser(&cancelOnRead{cancel: cancel, data: strings.Repeat("x", 200000)}), nil
+		}}
+		res, err := e.d.Deliver(ctx, &Request{Message: src, Destinations: oneDestination("example.com", "a@example.com")}, nil)
+		if !errors.Is(err, context.Canceled) || len(p1.delivered()) != 0 {
+			t.Fatalf("result = %+v, %v", res, err)
+		}
+		if d := dispositions(res.Destinations[0]); d != "not-attempted" && d != "temporary-failure" {
+			t.Errorf("disposition %s; cancellation before the terminator is never delivered or indeterminate", d)
+		}
+	})
+	t.Run("after the terminator", func(t *testing.T) {
+		e, p1, p2 := twoMX(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		p1.data = func(string) string { cancel(); time.Sleep(200 * time.Millisecond); return "250 ok" }
+		res, err := e.deliver(t, ctx, "a@example.com")
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v", err)
+		}
+		if d := dispositions(res.Destinations[0]); d != "indeterminate" && d != "delivered" {
+			t.Errorf("disposition %s; after the terminator only delivered or indeterminate is honest", d)
+		}
+		if p2.sessionCount() != 0 {
+			t.Error("contacted another MX after the terminator was sent")
+		}
+	})
+}
+
+type cancelOnRead struct {
+	cancel context.CancelFunc
+	data   string
+	n      int
+}
+
+func (c *cancelOnRead) Read(p []byte) (int, error) {
+	if c.n >= len(c.data) {
+		return 0, io.EOF
+	}
+	if c.n > 0 {
+		c.cancel()
+		time.Sleep(20 * time.Millisecond)
+	}
+	k := copy(p, c.data[c.n:])
+	c.n += k
+	return k, nil
+}
+
+func TestReviewOpenFailsOnSecondCall(t *testing.T) {
+	e, p1, _ := twoMX(t, nil)
+	p1.data = func(string) string { return "451 4.3.0 later" }
+	calls := 0
+	srcErr := errors.New("spool gone")
+	src := MessageSource{Open: func(context.Context, *OpenMessageOptions) (io.ReadCloser, error) {
+		calls++
+		if calls == 2 {
+			return nil, srcErr
+		}
+		return io.NopCloser(strings.NewReader(testBody)), nil
+	}}
+	res, err := e.d.Deliver(context.Background(), &Request{Message: src, Destinations: oneDestination("example.com", "a@example.com")}, nil)
+	if !errors.Is(err, srcErr) {
+		t.Fatalf("err = %v", err)
+	}
+	out := res.Destinations[0].Recipients[0]
+	if out.Disposition != DispositionTemporary || out.Reply == nil || out.Reply.Code != 451 {
+		t.Errorf("outcome = %+v; the 451 from the first attempt stays the recipient's outcome", out)
 	}
 }

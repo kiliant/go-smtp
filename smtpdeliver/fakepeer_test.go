@@ -30,6 +30,8 @@ type fakePeer struct {
 	// dropAfterDot closes the connection after the DATA terminator without a
 	// reply: the lost-final-reply case.
 	dropAfterDot bool
+	// dropOnDATA closes the connection on the DATA command, before 354.
+	dropOnDATA bool
 
 	mu         sync.Mutex
 	sessions   int
@@ -171,6 +173,9 @@ func (p *fakePeer) serve(conn net.Conn) {
 			}
 			write(reply)
 		case "DATA":
+			if p.dropOnDATA {
+				return
+			}
 			write("354 go ahead")
 			var body strings.Builder
 			for {

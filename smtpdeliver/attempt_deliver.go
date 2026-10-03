@@ -21,10 +21,15 @@ func (d *Deliverer) Deliver(ctx context.Context, request *Request, opts *Deliver
 	if err != nil {
 		return Result{}, err
 	}
-	if err := ctx.Err(); err != nil {
-		return Result{}, err
-	}
 	result := Result{Destinations: make([]DestinationResult, len(dests))}
+	if err := ctx.Err(); err != nil {
+		for i, dest := range dests {
+			o := newDestinationOutcomes(dest.domain, dest.recipients)
+			o.finishAll(DispositionNotAttempted, statusNone, err)
+			result.Destinations[i] = o.result
+		}
+		return result, err
+	}
 	for i, dest := range dests {
 		dr, callErr := d.deliverDestination(ctx, request, dest)
 		result.Destinations[i] = dr
@@ -48,7 +53,7 @@ func (d *Deliverer) Deliver(ctx context.Context, request *Request, opts *Deliver
 func (d *Deliverer) deliverDestination(ctx context.Context, request *Request, dest destination) (DestinationResult, error) {
 	o := newDestinationOutcomes(dest.domain, dest.recipients)
 	stop := func(err error) (DestinationResult, error) {
-		o.finishAll(DispositionNotAttempted, statusNone, err)
+		o.stopPending(err)
 		return o.result, err
 	}
 
@@ -84,7 +89,7 @@ func (d *Deliverer) deliverDestination(ctx context.Context, request *Request, de
 		// because the MX RRset itself is not secure (RFC 7672 §2.2.1).
 		o.result.Policies = append(o.result.Policies, PolicyResult{Kind: PolicyDANE, Mode: string(d.daneMode), Source: PolicySourceDNS, Applied: true, Cause: errDANEInsecureMX})
 	}
-	tally := requireTLSTally{enabled: wantsRequireTLS(request.MailOptions)}
+	tally := exhaustionTally{requireTLS: wantsRequireTLS(request.MailOptions)}
 	for _, step := range plan.steps {
 		pending := o.pending()
 		if len(pending) == 0 {
@@ -93,21 +98,21 @@ func (d *Deliverer) deliverDestination(ctx context.Context, request *Request, de
 		if step.skipped() {
 			o.result.Attempts = append(o.result.Attempts, resolveAttempt(step, step.skip, nil))
 			deferAll(o, pending, step.skip, len(o.result.Attempts)-1)
-			tally.otherFailures++
+			tally.add(failureOther, nil)
 			continue
 		}
 		dane, err := d.lookupDANE(ctx, dest.domain, step)
 		if err != nil {
 			return stop(err)
 		}
-		tlsPlan := d.planTLS(tlsInput{domain: dest.domain, step: step, sts: sts, dane: dane, requireTLS: tally.enabled})
+		tlsPlan := d.planTLS(tlsInput{domain: dest.domain, step: step, sts: sts, dane: dane, requireTLS: tally.requireTLS})
 		if tlsPlan.skip != nil {
 			o.result.Attempts = append(o.result.Attempts, resolveAttempt(step, tlsPlan.skip, tlsPlan.report.policies()))
 			deferAll(o, pending, tlsPlan.skip, len(o.result.Attempts)-1)
 			if errors.Is(tlsPlan.skip, errRequireTLSMXNotValid) {
-				tally.tlsFailures++
+				tally.add(failureTLSRequirement, nil)
 			} else {
-				tally.otherFailures++
+				tally.add(failureOther, nil)
 			}
 			continue
 		}
@@ -115,24 +120,25 @@ func (d *Deliverer) deliverDestination(ctx context.Context, request *Request, de
 		out := d.runAttempt(ctx, attemptInput{domain: dest.domain, request: request, step: step, tls: tlsPlan, recipients: dest.recipients, indices: pending})
 		o.result.Attempts = append(o.result.Attempts, out.record)
 		attempt := len(o.result.Attempts) - 1
-		switch out.requireTLS {
-		case requireTLSTLS:
-			tally.tlsFailures++
-		case requireTLSNotAdvertised:
-			tally.notAdvertised++
-		case requireTLSOther:
-			tally.otherFailures++
-		}
+		tally.metRequireTLS = tally.metRequireTLS || out.metRequireTLS
+		kind := out.kind
 		for _, dec := range out.decisions {
-			if dec.disposition == DispositionTemporary {
-				o.defer_(dec.index, dec.reply, dec.cause, attempt)
-				if dec.reply != nil {
-					tally.otherFailures++
+			switch {
+			case dec.disposition == DispositionTemporary:
+				if kind == failureNone {
+					kind = failureOther // a 4yz reply
 				}
-				continue
+				if out.callErr == nil {
+					o.defer_(dec.index, dec.reply, dec.cause, attempt)
+				}
+			case dec.disposition == DispositionNotAttempted:
+				// Left to stopPending, which keeps an earlier attempt's
+				// failure rather than calling the recipient untouched.
+			default:
+				o.finish(dec.index, dec.disposition, dec.reply, dec.status, dec.cause, attempt)
 			}
-			o.finish(dec.index, dec.disposition, dec.reply, dec.status, dec.cause, attempt)
 		}
+		tally.add(kind, &out)
 		if out.callErr != nil {
 			return stop(out.callErr)
 		}

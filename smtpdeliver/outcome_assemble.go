@@ -1,6 +1,7 @@
 package smtpdeliver
 
 import (
+	"context"
 	"errors"
 
 	smtp "github.com/kiliant/go-smtp"
@@ -94,37 +95,90 @@ func (o *destinationOutcomes) finishAll(d Disposition, status smtp.EnhancedCode,
 }
 
 // exhaust finishes recipients still pending once candidates are used up:
-// each keeps its last temporary failure. REQUIRETLS exhaustion is permanent
-// (RFC 8689 §4.2.1), with 5.7.30 when servers lacked REQUIRETLS and 5.7.10
-// otherwise.
-func (o *destinationOutcomes) exhaust(requireTLS requireTLSTally) {
+// each keeps its last temporary failure, unless the tally shows that no
+// candidate could ever take the message (see exhaustionTally).
+func (o *destinationOutcomes) exhaust(t exhaustionTally) {
+	permanent, status, cause := t.verdict()
 	for _, i := range o.pending() {
 		last := o.last[i]
-		if requireTLS.exhausted() {
-			status := statusEncryptionNeeded
-			if requireTLS.notAdvertised > 0 {
-				status = statusRequireTLSNeeded
-			}
-			o.finish(i, DispositionPermanent, last.reply, status, errors.Join(errRequireTLSExhausted, last.cause), last.attempt)
+		if permanent {
+			o.finish(i, DispositionPermanent, last.reply, status, errors.Join(cause, last.cause), last.attempt)
 			continue
 		}
 		o.finish(i, DispositionTemporary, last.reply, smtp.EnhancedCode{}, last.cause, last.attempt)
 	}
 }
 
-// requireTLSTally counts, for a REQUIRETLS message, how candidates failed.
-// RFC 8689 §4.2.1 makes the message undeliverable when no MX host meets the
-// requirements; a candidate that failed for an unrelated reason (a refused
-// connection, a 4yz reply) leaves the ordinary temporary outcome in place.
-type requireTLSTally struct {
-	enabled       bool
-	tlsFailures   int
-	notAdvertised int
-	otherFailures int
+// stopPending finishes recipients still pending when the call ends early.
+// One that already received a failure from an earlier attempt keeps it as a
+// temporary outcome; one never reached is not attempted.
+func (o *destinationOutcomes) stopPending(cause error) {
+	for _, i := range o.pending() {
+		last := o.last[i]
+		if last.attempt >= 0 && (last.reply != nil || (last.cause != nil && !isContextError(last.cause))) {
+			o.finish(i, DispositionTemporary, last.reply, smtp.EnhancedCode{}, last.cause, last.attempt)
+			continue
+		}
+		o.finish(i, DispositionNotAttempted, nil, statusNone, cause, -1)
+	}
 }
 
-func (t requireTLSTally) exhausted() bool {
-	return t.enabled && t.tlsFailures+t.notAdvertised > 0 && t.otherFailures == 0
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-var errRequireTLSExhausted = errors.New("smtpdeliver: no MX host meets the REQUIRETLS requirements (RFC 8689 §4.2.1)")
+// exhaustionTally counts how a destination's candidates failed.
+//
+// RFC 8689 §4.2.1 makes a REQUIRETLS message undeliverable, and so
+// permanently failed, when no MX host can meet its requirements. RFC 6531
+// §3.5 and RFC 6152 §3 likewise leave a message needing SMTPUTF8 or 8-bit
+// transport undeliverable when no MX supports it. Either verdict needs every
+// failure to be of that kind: one candidate that failed for an unrelated
+// reason (a refused connection, a 4yz, a network error) or that met the
+// REQUIRETLS requirements leaves the ordinary temporary outcome.
+type exhaustionTally struct {
+	requireTLS       bool
+	metRequireTLS    bool
+	tlsRequirement   int
+	notAdvertised    int
+	capability       int
+	capabilityStatus smtp.EnhancedCode
+	other            int
+}
+
+func (t *exhaustionTally) add(kind failureKind, out *attemptOutcome) {
+	switch kind {
+	case failureTLSRequirement:
+		t.tlsRequirement++
+	case failureRequireTLSNotAdvertised:
+		t.notAdvertised++
+	case failureCapability:
+		t.capability++
+		if out != nil {
+			t.capabilityStatus = out.capabilityStatus
+		}
+	case failureOther:
+		t.other++
+	}
+}
+
+func (t exhaustionTally) verdict() (bool, smtp.EnhancedCode, error) {
+	if t.other > 0 {
+		return false, statusNone, nil
+	}
+	if t.requireTLS && !t.metRequireTLS && t.capability == 0 && t.tlsRequirement+t.notAdvertised > 0 {
+		if t.notAdvertised > 0 {
+			return true, statusRequireTLSNeeded, errRequireTLSExhausted
+		}
+		return true, statusEncryptionNeeded, errRequireTLSExhausted
+	}
+	if t.capability > 0 && t.tlsRequirement == 0 && t.notAdvertised == 0 {
+		return true, t.capabilityStatus, errCapabilityExhausted
+	}
+	return false, statusNone, nil
+}
+
+var (
+	errRequireTLSExhausted = errors.New("smtpdeliver: no MX host meets the REQUIRETLS requirements (RFC 8689 §4.2.1)")
+	errCapabilityExhausted = errors.New("smtpdeliver: no MX host supports an extension the message requires")
+)
