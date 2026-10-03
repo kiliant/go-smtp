@@ -1,6 +1,9 @@
 package smtpdeliver
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 // MemoryPolicyCacheOptions configures NewMemoryPolicyCache. It has no fields
 // yet. A nil *MemoryPolicyCacheOptions means defaults (RFC 8461 §5.1).
@@ -18,12 +21,28 @@ type MemoryPolicyCacheOptions struct {
 // PolicyCache instead. A nil opts means defaults.
 func NewMemoryPolicyCache(opts *MemoryPolicyCacheOptions) PolicyCache {
 	_ = opts
-	// T27 implements the cache; until then it reports not implemented, which
-	// Deliver treats as a cache failure and never as a miss.
+	var (
+		mu      sync.Mutex
+		entries = map[string]PolicyCacheEntry{}
+	)
 	return PolicyCache{
-		Load: func(context.Context, *PolicyCacheLoadRequest) (PolicyCacheEntry, bool, error) {
-			return PolicyCacheEntry{}, false, errNotImplemented
+		Load: func(ctx context.Context, req *PolicyCacheLoadRequest) (PolicyCacheEntry, bool, error) {
+			if err := ctx.Err(); err != nil {
+				return PolicyCacheEntry{}, false, err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			e, ok := entries[req.Domain]
+			return cloneEntry(e), ok, nil
 		},
-		Store: func(context.Context, *PolicyCacheStoreRequest) error { return errNotImplemented },
+		Store: func(ctx context.Context, req *PolicyCacheStoreRequest) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			entries[req.Entry.Domain] = cloneEntry(req.Entry)
+			return nil
+		},
 	}
 }

@@ -270,24 +270,11 @@ func TestStubsValidateBeforeReportingUnimplemented(t *testing.T) {
 	if _, err := d.RefreshPolicy(ctx, "bad domain", nil); err == nil || errors.Is(err, errNotImplemented) {
 		t.Errorf("RefreshPolicy(invalid) = %v, want a validation error", err)
 	}
-	if _, err := d.RefreshPolicy(ctx, "example.com", nil); !errors.Is(err, errNotImplemented) {
-		t.Errorf("RefreshPolicy(valid) = %v, want errNotImplemented until T27", err)
-	}
 	plain, err := New(baseOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := plain.RefreshPolicy(ctx, "example.com", nil); err == nil || !strings.Contains(err.Error(), "MTASTS") {
 		t.Errorf("RefreshPolicy without MTA-STS = %v, want a configuration error", err)
-	}
-}
-
-func TestMemoryPolicyCacheStubFailsClosed(t *testing.T) {
-	cache := NewMemoryPolicyCache(nil)
-	if _, _, err := cache.Load(context.Background(), &PolicyCacheLoadRequest{Domain: "example.com"}); !errors.Is(err, errNotImplemented) {
-		t.Errorf("Load = %v, want errNotImplemented until T27 (a load error defers delivery; it is never a miss)", err)
-	}
-	if err := cache.Store(context.Background(), &PolicyCacheStoreRequest{}); !errors.Is(err, errNotImplemented) {
-		t.Errorf("Store = %v, want errNotImplemented until T27", err)
 	}
 }
