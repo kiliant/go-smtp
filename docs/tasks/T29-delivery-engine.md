@@ -95,6 +95,27 @@ resolver.
   `ErrFinalStatusUnknown`, re-send to a delivered recipient, and drop a
   duplicate recipient. Each must turn a test red.
 
+## Contracts fixed by T25's API review (2026-10-03)
+
+These are binding. The exported shape is reviewed and settled; this task fills
+it in.
+
+- **Configuration validation in `New` may only be loosened after the tag,
+  never tightened.** Rejecting an `Options` that used to be accepted breaks
+  callers at runtime. Every `New`-time rejection this task needs must land
+  before T31.
+- `RecipientOutcome.Reply` is a `*smtp.RecipientResult` and holds **positive
+  replies too**, because the 250 carries the remote queue ID. A permanent MAIL
+  rejection is recorded with `Command: "MAIL"`. `Status` copies the reply's
+  enhanced code, or the code assigned by T26.
+- `AttemptResult.Cause` is nil when the transaction completed, even with
+  negative replies.
+- `Event.Cause` replaces `Err`. `Address` fields are `netip.AddrPort`.
+- **LMTP is not reachable through the public surface yet.** No route
+  selects LMTP. Test the "LMTP partial prefix" row through the attempt
+  function directly, and record that a public LMTP route would be a later
+  additive field.
+
 ## Done when
 
 The tests pass under `-race`. Every row has a test. The mutation records exist.

@@ -41,7 +41,8 @@ type Destination struct {
 	// Domain is the absolute ASCII routing domain resolved for MX records and
 	// used as the RFC 8461 Policy Domain. A trailing dot is optional; search
 	// suffixes are never applied. A caller accepting internationalised domains
-	// supplies the A-label (RFC 5890). Address literals are not accepted.
+	// supplies the A-label (RFC 5890). Address literals are not accepted
+	// here; a later field may carry one.
 	//
 	// It is supplied explicitly rather than derived from recipient addresses,
 	// which may quote "@" in local-parts, use SMTPUTF8 spellings, or be routed
@@ -87,14 +88,16 @@ type MessageSource struct {
 
 // OpenMessageOptions is passed to MessageSource.Open. It has no fields yet;
 // the struct exists so a future attempt detail is an added field rather than
-// a changed callback signature (RFC 5321 §3.3 content transfer). A nil
-// *OpenMessageOptions means defaults.
+// a changed callback signature (RFC 5321 §3.3 content transfer). Unlike call
+// options it is produced by the Deliverer, which always passes a non-nil
+// value, so the nil-means-defaults rule does not apply to it.
 type OpenMessageOptions struct {
 	_ struct{}
 }
 
 // DeliverOptions configures one Deliverer.Deliver call (RFC 5321 §3.3). It
-// has no fields yet. A nil *DeliverOptions means defaults.
+// has no fields yet. A nil *DeliverOptions means defaults: the Deliverer's
+// configuration. A field added later inherits that configuration when zero.
 type DeliverOptions struct {
 	_ struct{}
 }

@@ -281,3 +281,13 @@ func TestStubsValidateBeforeReportingUnimplemented(t *testing.T) {
 		t.Errorf("RefreshPolicy without MTA-STS = %v, want a configuration error", err)
 	}
 }
+
+func TestMemoryPolicyCacheStubFailsClosed(t *testing.T) {
+	cache := NewMemoryPolicyCache(nil)
+	if _, _, err := cache.Load(context.Background(), &PolicyCacheLoadRequest{Domain: "example.com"}); !errors.Is(err, errNotImplemented) {
+		t.Errorf("Load = %v, want errNotImplemented until T27 (a load error defers delivery; it is never a miss)", err)
+	}
+	if err := cache.Store(context.Background(), &PolicyCacheStoreRequest{}); !errors.Is(err, errNotImplemented) {
+		t.Errorf("Store = %v, want errNotImplemented until T27", err)
+	}
+}

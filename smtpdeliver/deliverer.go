@@ -22,8 +22,13 @@ const (
 
 // Deliverer makes RFC 5321 delivery attempts with one immutable
 // configuration. It owns MTA-STS (RFC 8461) cache coordination but no message
-// queue and no connection pool: every Deliver call dials, uses and closes its
-// own connections. A Deliverer is safe for concurrent use.
+// queue and no connection pool: unless configured otherwise, every Deliver
+// call dials, uses and closes its own connections.
+//
+// A Deliverer is safe for concurrent use. Callbacks (Resolver, PolicyCache,
+// Dial, MessageSource.Open, Trace) may run concurrently across concurrent
+// Deliver calls; within one call they run sequentially, destination by
+// destination, unless an option enabling parallel destinations is set.
 type Deliverer struct {
 	resolver        Resolver
 	cache           *PolicyCache

@@ -78,6 +78,26 @@ nothing more.
   policy be applied, and let a failed refresh extend expiry. Both must turn a
   test red.
 
+## Contracts fixed by T25's API review (2026-10-03)
+
+These are binding. The exported shape is reviewed and settled; this task fills
+it in.
+
+- **Configuration validation in `New` may only be loosened after the tag,
+  never tightened.** Rejecting an `Options` that used to be accepted breaks
+  callers at runtime. Every `New`-time rejection this task needs must land
+  before T31.
+- `PolicyCacheEntry.Body` is authoritative. Store the policy file exactly as
+  fetched, and **reparse `Body` on every Load**. `Policy` is an informational
+  view and is ignored on Load. This preserves keys the parser does not know.
+- `NewMemoryPolicyCache(*MemoryPolicyCacheOptions) PolicyCache` is declared,
+  and T27 fills in `smtpdeliver/mtasts_memory.go`. Keep the restart caveat in
+  its doc comment.
+- Send `Cache-Control: no-cache` on every fetch, as `Options.HTTPClient`
+  documents.
+- An MX that fails the policy is an `AttemptResult` with
+  `Stage: StageResolve`.
+
 ## Done when
 
 The tests pass under `-race`. Fuzz targets exist for the TXT parser, the policy

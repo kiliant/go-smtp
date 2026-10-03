@@ -14,9 +14,8 @@ import (
 // A lookup returns a nil error with State LookupNotFound for NXDOMAIN and
 // State LookupFound with no records for an empty answer (NODATA). A non-nil
 // error means a temporary failure, such as SERVFAIL or a timeout. A resolver
-// that cannot tell NXDOMAIN from NODATA must say so in its documentation; the
-// standard-library fallback reports both as not found for addresses and TXT,
-// and as an empty answer for MX (see Options.Resolver).
+// that cannot tell NXDOMAIN from NODATA must say so in its documentation, as
+// Options.Resolver does for the standard-library fallback.
 //
 // Callers constructing a Resolver literal must use keyed fields.
 type Resolver struct {
@@ -37,6 +36,7 @@ type Resolver struct {
 }
 
 // LookupMXRequest asks for the MX records of one name (RFC 5321 §5.1).
+// The Deliverer always passes a non-nil value.
 //
 // Callers constructing a LookupMXRequest literal, for example in tests, must
 // use keyed fields.
@@ -49,6 +49,7 @@ type LookupMXRequest struct {
 
 // LookupIPRequest asks for the A and AAAA records of one name (RFC 1035,
 // RFC 3596).
+// The Deliverer always passes a non-nil value.
 //
 // Callers constructing a LookupIPRequest literal, for example in tests, must
 // use keyed fields.
@@ -60,6 +61,7 @@ type LookupIPRequest struct {
 }
 
 // LookupTXTRequest asks for the TXT records of one name (RFC 1035 §3.3.14).
+// The Deliverer always passes a non-nil value.
 //
 // Callers constructing a LookupTXTRequest literal, for example in tests, must
 // use keyed fields.
@@ -72,6 +74,7 @@ type LookupTXTRequest struct {
 
 // LookupTLSARequest asks for the TLSA records of one name (RFC 6698 §3), such
 // as "_25._tcp.mx.example.com".
+// The Deliverer always passes a non-nil value.
 //
 // Callers constructing a LookupTLSARequest literal, for example in tests, must
 // use keyed fields.

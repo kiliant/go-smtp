@@ -68,6 +68,19 @@ one, stop and escalate.
   DANE failure, and let a TLSA lookup error fall back to cleartext. Both must
   turn a test red.
 
+## Contracts fixed by T25's API review (2026-10-03)
+
+These are binding. The exported shape is reviewed and settled; this task fills
+it in.
+
+- **Configuration validation in `New` may only be loosened after the tag,
+  never tightened.** Rejecting an `Options` that used to be accepted breaks
+  callers at runtime. Every `New`-time rejection this task needs must land
+  before T31.
+- A destination-level DANE evaluation goes in `DestinationResult.Policies`.
+  An example is mandatory DANE with an insecure MX lookup. A TLSA lookup
+  failure that skips one MX is an `AttemptResult` with `Stage: StageResolve`.
+
 ## Done when
 
 The tests pass under `-race`. Every selector and matching-type pair has a vector.

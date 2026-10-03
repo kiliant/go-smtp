@@ -52,6 +52,23 @@ Use `fakeresolver_test.go` and append cases to it.
 - **Mutation check:** remove the null-MX guard and show a test that sees a
   fallthrough to A/AAAA fail. Record it in `.state/progress/T26.md`.
 
+## Contracts fixed by T25's API review (2026-10-03)
+
+These are binding. The exported shape is reviewed and settled; this task fills
+it in.
+
+- **Configuration validation in `New` may only be loosened after the tag,
+  never tightened.** Rejecting an `Options` that used to be accepted breaks
+  callers at runtime. Every `New`-time rejection this task needs must land
+  before T31.
+- Local failures carry an RFC 3463 status on `RecipientOutcome.Status`: null
+  MX is 5.1.10 (RFC 7505 §4.1), and a routing loop is 5.4.6 (RFC 3463 §3.5).
+  Do not leave callers to string-match `Cause`.
+- An MX skipped before connecting (address lookup failed, no address) is an
+  `AttemptResult` with a zero `Address` and `Stage: StageResolve`.
+- Destination-level policy evaluations go in `DestinationResult.Policies`,
+  which is a slice, one entry per mechanism.
+
 ## Done when
 
 The tests pass under `-race`. Every row of the design §4 algorithm has a test.

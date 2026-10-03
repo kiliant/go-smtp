@@ -19,7 +19,11 @@ import (
 type Options struct {
 	// Resolver supplies DNS lookups. A nil field falls back to the standard
 	// library for MX, IP and TXT lookups, reporting DNSSECUnvalidated; there
-	// is no standard-library TLSA lookup (RFC 6698).
+	// is no standard-library TLSA lookup (RFC 6698). The standard library
+	// cannot tell NXDOMAIN from an empty answer: the fallback reports both as
+	// an empty MX answer, so the RFC 5321 §5.1 implicit MX applies and a
+	// nonexistent domain then fails at its address lookup, and as not found
+	// for addresses and TXT.
 	Resolver Resolver
 	// MTASTS enables RFC 8461 MTA-STS. nil disables it; there is no default
 	// policy cache, because a cache that forgets enforce policies on restart
@@ -30,17 +34,21 @@ type Options struct {
 	// DNSSEC-aware view.
 	DANE *DANEOptions
 	// Dial establishes the TCP connection for one attempt to the RFC 5321
-	// SMTP port of a selected address. nil selects a net.Dialer bounded by
-	// Timeouts.Connect.
+	// SMTP port of a selected address. Its ctx carries the Timeouts.Connect
+	// deadline. nil selects a net.Dialer.
 	Dial func(ctx context.Context, req *DialRequest) (net.Conn, error)
 	// HTTPClient fetches RFC 8461 policies. nil selects a client using the
-	// system roots. It is copied, and its Transport treated as immutable;
-	// redirects, response caching and the policy size and time limits are
-	// enforced by this package whatever the client's own settings.
+	// system roots. It is copied and its Transport treated as immutable. This
+	// package refuses redirects, enforces the policy size and time limits, and
+	// sends "Cache-Control: no-cache" whatever the client's own settings; a
+	// caching Transport that ignores that header is the caller's
+	// responsibility.
 	HTTPClient *http.Client
 	// TLSConfig supplies additional STARTTLS (RFC 3207) configuration. It is
-	// cloned per attempt. It may strengthen the defaults but cannot disable an
-	// applied MTA-STS or DANE requirement.
+	// cloned per attempt. Without an applicable policy the default is
+	// unauthenticated opportunistic TLS (RFC 7435); MTA-STS and DANE add
+	// authentication. The configuration may strengthen these defaults but
+	// cannot disable an applied MTA-STS or DANE requirement.
 	TLSConfig *tls.Config
 	// Identity is the client name sent in EHLO (RFC 5321 §4.1.1.1). Empty
 	// selects smtpclient's default.
@@ -65,7 +73,8 @@ type Options struct {
 	// RFC 5321 §5.1 trade-off of a single attempt per destination.
 	AllowSingleAddress bool
 	// MaxDestinations caps the destinations in one Request, protecting against
-	// accidental unbounded work (RFC 5321 §5). Zero selects 100.
+	// accidental unbounded work. It is a local limit, not an RFC 5321 one.
+	// Zero selects 100.
 	MaxDestinations int
 	// Timeouts bounds the DNS, connect and policy-fetch stages. SMTP command
 	// stages use smtpclient's RFC 5321 §4.5.3.2 defaults.
@@ -80,10 +89,10 @@ type Options struct {
 	_ struct{}
 }
 
-// Timeouts bounds the delivery stages this package owns. SMTP command
-// timeouts follow smtpclient's RFC 5321 §4.5.3.2 defaults. A zero field
-// selects its documented default; the caller's context always bounds every
-// stage as well.
+// Timeouts bounds delivery stages. Today it covers the stages this package
+// owns; SMTP command stages follow smtpclient's RFC 5321 §4.5.3.2 defaults, and
+// a field added later may override one of them. A zero field selects its
+// documented default; the caller's context always bounds every stage as well.
 //
 // Callers constructing a Timeouts literal must use keyed fields.
 type Timeouts struct {
@@ -100,7 +109,8 @@ type Timeouts struct {
 }
 
 // DialRequest describes one connection a Deliverer needs to an RFC 5321 SMTP
-// server. The Deliverer constructs it; a Dial callback reads it.
+// server. The Deliverer constructs it and always passes a non-nil value; a
+// Dial callback reads it.
 //
 // Callers constructing a DialRequest literal, for example in tests, must use
 // keyed fields.
@@ -110,7 +120,8 @@ type DialRequest struct {
 	// Address is the selected IP address and the RFC 5321 SMTP port, 25.
 	Address netip.AddrPort
 	// MX is the MX host name the address was selected for (RFC 5321 §5.1).
-	// It is the TLS identity of the attempt, not a name to resolve again.
+	// When set it is the TLS identity of the attempt, not a name to resolve
+	// again. A later routing mode that selects no MX leaves it empty.
 	MX string
 	// Domain is the destination's routing domain and RFC 8461 Policy Domain.
 	Domain string
@@ -154,7 +165,8 @@ const (
 	// otherwise falls back to ordinary opportunistic TLS (RFC 7672 §2.2).
 	DANEOpportunistic DANEMode = "opportunistic"
 	// DANEMandatory treats the absence of secure usable TLSA records as a
-	// temporary failure (RFC 7672 §2.2).
+	// temporary failure. It is local policy layered on RFC 7672, which itself
+	// is opportunistic.
 	DANEMandatory DANEMode = "mandatory"
 	// DANEAudit records DANE validation failures without blocking delivery,
 	// the explicit exception of RFC 7672 §8.3.
@@ -182,7 +194,8 @@ type PolicyCache struct {
 	_ struct{}
 }
 
-// PolicyCacheLoadRequest asks a PolicyCache for one RFC 8461 policy.
+// PolicyCacheLoadRequest asks a PolicyCache for one RFC 8461 policy. The
+// Deliverer always passes a non-nil value.
 //
 // Callers constructing a PolicyCacheLoadRequest literal, for example in tests,
 // must use keyed fields.
@@ -193,7 +206,8 @@ type PolicyCacheLoadRequest struct {
 	_ struct{}
 }
 
-// PolicyCacheStoreRequest asks a PolicyCache to save one RFC 8461 policy.
+// PolicyCacheStoreRequest asks a PolicyCache to save one RFC 8461 policy. The
+// Deliverer always passes a non-nil value.
 //
 // Callers constructing a PolicyCacheStoreRequest literal, for example in
 // tests, must use keyed fields.
@@ -204,7 +218,10 @@ type PolicyCacheStoreRequest struct {
 	_ struct{}
 }
 
-// PolicyCacheEntry is one cached RFC 8461 MTA-STS policy.
+// PolicyCacheEntry is one cached RFC 8461 MTA-STS policy. Body is the
+// authoritative form: a cache must persist it unchanged, and loaded entries are
+// reparsed from it, so policy keys this release does not understand survive a
+// round trip through the caller's storage.
 //
 // Callers constructing a PolicyCacheEntry literal must use keyed fields.
 type PolicyCacheEntry struct {
@@ -212,7 +229,11 @@ type PolicyCacheEntry struct {
 	Domain string
 	// ID is the policy's "id" from the RFC 8461 §3.1 TXT record.
 	ID string
-	// Policy is the parsed RFC 8461 §3.2 policy.
+	// Body is the policy file exactly as fetched (RFC 8461 §3.2), at most
+	// 64 KiB.
+	Body []byte
+	// Policy is the parsed view of Body, for the caller's inspection. It is
+	// ignored on Load; the Deliverer reparses Body instead.
 	Policy MTASTSPolicy
 	// FetchedAt is when the policy was fetched. Expiry is FetchedAt plus
 	// Policy.MaxAge (RFC 8461 §5.1) and is never extended by a failed refresh.

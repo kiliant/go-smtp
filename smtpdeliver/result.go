@@ -26,9 +26,11 @@ type Result struct {
 type DestinationResult struct {
 	// Domain is the normalised routing domain: lower case, no trailing dot.
 	Domain string
-	// Policy is the RFC 8461 MTA-STS evaluation for the domain. Its Kind is
-	// empty when MTA-STS is disabled.
-	Policy PolicyResult
+	// Policies are the domain-level policy evaluations (RFC 8461 MTA-STS,
+	// RFC 7672 DANE), one per mechanism evaluated, in evaluation order. A
+	// mechanism that is disabled has no entry. Per-attempt evaluations are in
+	// AttemptResult.Policies.
+	Policies []PolicyResult
 	// Attempts are the MX and address attempts in the order they were made
 	// (RFC 5321 §5.1). They explain the outcomes; they are not outcomes.
 	Attempts []AttemptResult
@@ -49,8 +51,18 @@ type RecipientOutcome struct {
 	Address string
 	// Disposition says what happened and whether a later attempt is safe.
 	Disposition Disposition
-	// Reply is the RFC 5321 reply that decided the outcome, if one did.
-	Reply *smtp.Error
+	// Reply is the RFC 5321 reply that decided the outcome, positive or
+	// negative, or nil if none did. A positive reply is kept because it can
+	// carry the remote queue identifier a caller's RFC 3464 report quotes.
+	// Reply.Err returns the *smtp.Error for a negative one. A permanent MAIL
+	// rejection is recorded with Command "MAIL".
+	Reply *smtp.RecipientResult
+	// Status is the RFC 3463 enhanced status describing the outcome: the
+	// reply's own code when the server sent one, otherwise a code the
+	// Deliverer assigns to a local failure, such as 5.1.10 for null MX (RFC
+	// 7505 §4.1) or 5.4.6 for a routing loop (RFC 3463 §3.5). It is zero when
+	// neither applies.
+	Status smtp.EnhancedCode
 	// Cause is the non-reply failure that decided the outcome, such as a DNS,
 	// policy, TLS or transport error, with its original chain for errors.Is
 	// and errors.As.
@@ -63,8 +75,10 @@ type RecipientOutcome struct {
 	_ struct{}
 }
 
-// AttemptResult records one connection attempt to one address of one MX host
-// (RFC 5321 §5.1).
+// AttemptResult records one attempt on one MX host (RFC 5321 §5.1) and, once
+// one was selected, one of its addresses. An MX skipped before any connection,
+// for example because its address or TLSA lookup failed or it does not match
+// an RFC 8461 policy, is an attempt with a zero Address and Stage StageResolve.
 //
 // Results are produced by Deliver. Callers constructing one, for example in
 // tests, must use keyed fields.
@@ -73,15 +87,17 @@ type AttemptResult struct {
 	MX string
 	// Preference is the MX preference (RFC 5321 §5.1); 0 for an implicit MX.
 	Preference uint16
-	// Address is the IP address dialled.
-	Address netip.Addr
+	// Address is the IP address and port dialled, or the zero value if no
+	// address was selected.
+	Address netip.AddrPort
 	// Stage is the furthest stage the attempt reached.
 	Stage AttemptStage
 	// Policies are the transport policies (RFC 8461, RFC 7672) applied to the
 	// attempt and how each fared.
 	Policies []PolicyResult
-	// Cause is why the attempt ended early, or nil if it completed its
-	// transaction.
+	// Cause is why the attempt ended before completing its transaction, or
+	// nil if it completed one. A completed transaction can still carry
+	// negative replies; those are recorded on the recipient outcomes.
 	Cause error
 
 	_ struct{}
@@ -144,6 +160,9 @@ type AttemptStage string
 
 // Attempt stages, in RFC 5321 §3 protocol order.
 const (
+	// StageResolve is selecting this MX: its address and TLSA lookups and
+	// RFC 8461 policy matching (RFC 5321 §5.1).
+	StageResolve AttemptStage = "resolve"
 	// StageConnect is establishing the TCP connection (RFC 5321 §3.1).
 	StageConnect AttemptStage = "connect"
 	// StageGreeting is reading the 220 greeting (RFC 5321 §3.1).

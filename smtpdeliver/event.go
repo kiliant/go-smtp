@@ -16,10 +16,10 @@ type Event struct {
 	Domain string
 	// MX is the MX host name involved, if any (RFC 5321 §5.1).
 	MX string
-	// Address is the IP address involved, if any.
-	Address netip.Addr
-	// Err is the failure the event reports, or nil.
-	Err error
+	// Address is the IP address and port involved, if any.
+	Address netip.AddrPort
+	// Cause is the failure the event reports, or nil.
+	Cause error
 
 	_ struct{}
 }
