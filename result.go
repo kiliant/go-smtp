@@ -89,6 +89,11 @@ func (r RecipientResult) Err() *Error {
 // support (T07) lands — LMTP is the N-element case of the same type, not a
 // reason to introduce a second return type on the most frequently called
 // method in the library.
+//
+// A producer may document that a DataResult accompanying a non-nil error is
+// an authoritative prefix: the first entries, in RCPT order, of a result
+// whose remaining recipients have no known final status. smtpclient does so
+// for an interrupted LMTP reply stream; see its ErrFinalStatusUnknown.
 type DataResult []RecipientResult
 
 // AllAccepted reports whether every RFC 5321 or RFC 2033 recipient in d was Accepted. It reports

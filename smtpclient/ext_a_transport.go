@@ -185,11 +185,21 @@ func bdat(ctx context.Context, c *Client, r io.Reader, chunkSize int) (smtp.Data
 		if readErr != nil && !last {
 			return nil, true, readErr
 		}
+		// From the first byte of the LAST frame, a failure may follow the
+		// server's acceptance of the message.
 		if err := c.writeBDATChunk(ctx, buf[:n], last); err != nil {
+			if last {
+				return nil, true, finalStatusUnknown("BDAT", err)
+			}
 			return nil, true, err
 		}
 		reply, err := c.conn.pipeline.read(ctx, "BDAT", c.conn.dataFinalTimeout())
 		if err != nil {
+			if last {
+				// In LMTP mode this is the first per-recipient reply, so a
+				// coded 421 answers none of them.
+				return nil, true, c.classifyFinalReplyFailure("BDAT", err)
+			}
 			return nil, true, err
 		}
 		if last {
@@ -230,13 +240,17 @@ func bdatFinalReplies(ctx context.Context, c *Client, recipients []string, first
 			// pipeline.read poisons errors that could desynchronise the reply
 			// stream. Keep this explicit for any future alternate reader.
 			c.conn.poison()
-			return nil, err
+			// The replies already read are authoritative for their
+			// recipients; the rest may or may not have been delivered.
+			return authoritativePrefix(result, i), finalStatusUnknownStream("BDAT", err)
 		}
 		result[i] = bdatRecipientResult(recipients[i], reply, c)
 	}
 	if err := c.rejectExtraLMTPFinalReply("BDAT"); err != nil {
 		c.conn.poison()
-		return nil, err
+		// An extra reply means the replies cannot be attributed to
+		// recipients with confidence, so none of them is authoritative.
+		return nil, finalStatusUnknownStream("BDAT", err)
 	}
 	return result, nil
 }

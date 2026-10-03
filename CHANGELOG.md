@@ -9,6 +9,35 @@ outcomes rather than repeating commit messages.
 
 ## [Unreleased]
 
+### Added
+
+- **Exported API:** added `smtpclient.ErrFinalStatusUnknown`. It is wrapped
+  beneath the returned `*smtp.Error` when the operation completing a mail
+  transaction (the DATA terminator, a `BDAT … LAST` chunk or a `BURL … LAST`
+  command) may have reached the server but no final status was obtained, so a
+  caller can tell a possibly accepted message from one that certainly failed
+  and avoid duplicate deliveries on retry. The original cause stays reachable
+  through `errors.Is` and `errors.As`.
+
+### Changed
+
+- When an LMTP per-recipient reply stream ends early, including with a
+  session-level 421, `Data` now returns the final replies already received
+  together with an error wrapping `ErrFinalStatusUnknown`, instead of
+  discarding them. A mid-stream 421 previously looked like a definite failure
+  for every recipient.
+- **Error shape on completion failures:** on every path classified as
+  `ErrFinalStatusUnknown`, `smtp.Error.Err` is now a wrapper holding both the
+  sentinel and the cause, not the cause itself. Code comparing `Err` directly
+  (`e.Err == io.EOF`) or asserting its type must use `errors.Is` /
+  `errors.As`, which keep working.
+- **Cancellation after completion may have started:** a context cancelled
+  after the DATA terminator, during or after a `BDAT … LAST` or `BURL … LAST`
+  write, or while reading any LMTP per-recipient reply now returns an
+  `*smtp.Error` wrapping both `ErrFinalStatusUnknown` and the context error,
+  rather than the bare context error. `errors.Is(err, context.Canceled)` still
+  reports true.
+
 ## [1.1.0] - 2026-08-21
 
 This additive release supplies the shared vocabulary and internal

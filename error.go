@@ -29,7 +29,10 @@ type Error struct {
 	// Command is the command that provoked the reply, e.g. "RCPT".
 	Command string
 	// Err is an optional underlying protocol or transport cause, e.g. a
-	// *smtpwire parse error or a net.Error. Unwrap returns it.
+	// *smtpwire parse error or a net.Error. Unwrap returns it. It may wrap
+	// more than one error, such as a cause together with a classification
+	// sentinel, so inspect it with errors.Is and errors.As rather than by
+	// comparison or type assertion.
 	Err error
 
 	_ struct{}
