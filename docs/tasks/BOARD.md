@@ -38,7 +38,10 @@ owner named here rather than in whichever spec happens to mention it first.
 
 | File | Owner | Rule |
 |---|---|---|
-| `smtpclient/fakeserver_test.go` | T03 | Shared, **append-only**. T05, T07, T08, T09 and T10 add scripted cases; T03 owns its structure. Nobody deletes another task's cases. |
+| `smtpclient/fakeserver_test.go` | T03 | Shared, **append-only**. T05, T07, T08, T09 and T10 add scripted cases; T03 owns its structure. Nobody deletes another task's cases. T24 appends under the same rule. |
+| `smtpdeliver/fakeresolver_test.go` | T25 | Shared, **append-only**. T26–T30 add DNS cases; T25 owns its structure. |
+| `smtpdeliver/fakepeer_test.go` | T29 | Shared, **append-only**. T30 adds hostile peers; T29 owns its structure. |
+| `CHANGELOG.md` `[Unreleased]` | T31 | T24–T30 each **append** an entry; T31 owns the release section and the final wording. |
 
 This is the same arrangement as `internal/smtpwire/testdata/` (T01 owns the
 layout, others append). It exists because T08 and T09 are designed to run
@@ -56,8 +59,10 @@ owner:
 
 | File | Created by | Owned from |
 |---|---|---|
-| `**/*_fuzz_test.go` | whichever task introduces the parser | T11 |
-| `api_surface_test.go` | T02 | T12 |
+| `**/*_fuzz_test.go` | whichever task introduces the parser | T11 (T30 inside `smtpdeliver/**`) |
+| `api_surface_test.go` | T02 | T12 (T25 has a scoped grant to add `smtpdeliver` to its package lists) |
+| `smtpdeliver/attempt_deliver.go` | T25 (the `Deliver` stub) | T29 |
+| `smtpdeliver/mtasts_refresh.go` | T25 (the `RefreshPolicy` stub) | T27 |
 
 ## Tasks
 
@@ -86,6 +91,14 @@ owner:
 | [T21](T21-server-extensions.md) | Server extensions beyond the floor, incl. `ATRN` | M6 | T20 | `smtpserver/ext_*.go` | server-core |
 | [T22](T22-server-conformance.md) | Server conformance, interop, fuzzing, security tests | M6 | T20 | `interop/servers/gosmtp/**`, `smtpserver/**/*_fuzz_test.go` | fuzz-hardening + interop-harness |
 | [T23](T23-server-release.md) | Server API review, docs, `smtpserver` release | M6 | T21, T22 | `smtpserver` docs, examples, release | docs-release + api-guardian |
+| [T24](T24-final-status-unknown.md) | D00 — `smtpclient.ErrFinalStatusUnknown` | M7 | T14 | `smtpclient/finalstatus.go`; final-completion paths in `smtpclient/{data,ext_a_transport,ext_b_burl,lmtp}.go`; `DataResult` doc comment in `result.go` | client-core + api-guardian |
+| [T25](T25-delivery-skeleton.md) | D01 — `smtpdeliver` skeleton, public types, API gates, stdlib resolver | M7 | T14 | `smtpdeliver/{doc,deliverer,options,request,result,resolver,event,resolver_std}.go`, `smtpdeliver/api_surface_test.go` | client-core + api-guardian |
+| [T26](T26-delivery-routing.md) | D02 — MX routing, null MX, loop elimination, address order | M7 | T25 | `smtpdeliver/route_*.go` | client-core |
+| [T27](T27-mta-sts.md) | D03 — MTA-STS parsers, fetch, cache state machine | M7 | T25 | `smtpdeliver/mtasts_*.go` | client-core |
+| [T28](T28-dane.md) | D04 — DANE TLSA validation, TLS decision table | M7 | T25, T27 | `smtpdeliver/{dane,tls}_*.go` | client-core + api-guardian |
+| [T29](T29-delivery-engine.md) | D05 — attempt engine, replay, outcome classification | M7 | T24, T26, T28 | `smtpdeliver/{attempt,outcome}_*.go` | client-core + api-guardian |
+| [T30](T30-delivery-hardening.md) | D06 — delivery fuzzing, adversarial fixtures, interop | M7 | T26–T29 | `smtpdeliver/**/*_fuzz_test.go`, `smtpdeliver/testdata/**`, `interop/delivery/**` | fuzz-hardening + interop-harness |
+| [T31](T31-delivery-release.md) | D07 — `smtpdeliver` API review, docs, root minor release | M7 | T30 | `smtpdeliver` docs and examples, `CHANGELOG.md` release section, delivery rows of `docs/RFC-COVERAGE.md`, release | docs-release + api-guardian |
 
 **`docs/SERVER-DESIGN.md` is approved** (revision 4, 2026-08-04) and **every
 task now has a spec**: T18–T23 were written against it on 2026-08-12, satisfying
@@ -96,6 +109,16 @@ and from the specs existing, unchanged by either.
 Three of those specs share the `smtpserver/**` tree, so the precedence rules
 above do the work: T19 owns `backend.go` and `session.go` by name and T21 owns the
 `ext_*.go` prefix, both of which beat T18's subtree claim.
+
+**T24–T31 are `DELIVERY-DESIGN.md` §11's work packages D00–D07**, in that
+order. T24 takes over named final-completion paths in files owned by
+finished tasks (T05, T07, T08, T09), the way T16 took over
+`ext_b_limits.go`. Inside `smtpdeliver/**`, ownership is by file prefix, so the
+parallel phase (T26 ∥ T27) shares no file.
+
+**`smtpdeliver` ships from the root v1 module and is stable from its first tag.**
+No root tag may be cut while it is partial. T25 records which mechanism enforces
+that: an integration branch or a root-tag freeze. The human chooses.
 
 **T16 is the only server-scoped task with a deadline.** It is an M4 exit
 criterion because it removes client-only asymmetries from `package smtp`, and
@@ -118,6 +141,18 @@ T15 (design) ──┬── T16 (audit) ─────────────
 
 T01 and T02 may run in parallel. Both must complete before dependent work
 begins — they fix the type signatures every later task consumes.
+
+The delivery layer (M7) hangs off the approved T14 design:
+
+```
+T14 (approved) ──┬── T24 (final-status signal) ───────────────┐
+                 └── T25 (skeleton) ──┬── T26 (routing) ──────┼── T29 (engine) ── T30 ── T31 ── v1.x
+                                      └── T27 (MTA-STS) ── T28 (DANE) ──┘
+```
+
+T24 and T25 run in parallel, and so do T26 and T27. T28 can start against T25's
+resolver types, but its precedence tests need T27. T29 waits for T24: retry
+safety is its central contract.
 
 T15 is design-only and runs in parallel with everything, human-led. **T16 joins
 the critical path to v1.0**: it removes client-only asymmetries from
@@ -160,7 +195,8 @@ symbol it added, and its rows in `../RFC-COVERAGE.md` are updated.
 | A server reply the parser rejects | Save the bytes to `internal/smtpwire/testdata/`, note it for T01. |
 | An RFC number in `../RFC-COVERAGE.md` looks wrong | Check the IANA registry, fix the doc. Never work from a recalled number — three numbers were already wrong in the source material this repo was built from. |
 | Two servers disagree and both look RFC-compliant | Record both; the client accommodates both. Note it for the doc comment. |
-| You want to add MX lookup, MTA-STS, DANE or a TLS-policy interface | Stop. That is T14, post-v1.0, and the scope is settled. See `../ARCHITECTURE.md`. |
+| You want to add MX lookup, MTA-STS or DANE to `package smtp` or `smtpclient` | Stop. It belongs in `smtpdeliver` (T25–T31), never in the core client. See `../ARCHITECTURE.md`. |
+| You want a TLS-policy interface, an exported interface of any kind in `smtpdeliver`, or in-tree DNSSEC | Stop. `DELIVERY-DESIGN.md` §10 rejects all three. Escalate. |
 | You want to write `smtpserver` code | Check `git tag`. The design is approved; the implementation still waits for v1.0. Specs and T16/T17 are unblocked. |
 | A server-side need seems to require reshaping a type in `package smtp` | That is exactly T16's job, and T16 is M4. Record it there. After the tag it is a v2. |
 
