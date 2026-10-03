@@ -140,6 +140,13 @@ func TestAPISurfaceNoInternalLeak(t *testing.T) {
 	} else {
 		t.Log("smtpclient package does not exist yet (lands in T03); gate will engage once it does")
 	}
+	// smtpdeliver (T25) is held to the same rule: no internal/ type in any
+	// exported signature (DELIVERY-DESIGN.md §1).
+	if fset3, files, ok := loadPackageDir(t, "smtpdeliver"); ok {
+		for _, v := range internalLeakViolations(fset3, files) {
+			t.Error(v)
+		}
+	}
 }
 
 // -----------------------------------------------------------------------
@@ -165,6 +172,11 @@ func TestAPISurfaceKeyedLiteralDocNote(t *testing.T) {
 	} else {
 		t.Log("smtpclient package does not exist yet (lands in T03); gate will engage once it does")
 	}
+	if _, files, ok := loadPackageDir(t, "smtpdeliver"); ok {
+		for _, v := range keyedLiteralViolations(files) {
+			t.Error(v)
+		}
+	}
 }
 
 // -----------------------------------------------------------------------
@@ -174,7 +186,7 @@ func TestAPISurfaceKeyedLiteralDocNote(t *testing.T) {
 // public packages currently need no interfaces of their own; standard-library
 // interfaces appear directly in signatures instead.
 func TestAPISurfaceNoExportedInterfaces(t *testing.T) {
-	for _, dir := range []string{".", "smtpclient"} {
+	for _, dir := range []string{".", "smtpclient", "smtpdeliver"} {
 		fset, files, ok := loadPackageDir(t, dir)
 		if !ok {
 			continue
@@ -193,7 +205,7 @@ func TestAPISurfaceNoExportedInterfaces(t *testing.T) {
 // RFC (or, for Unicode normalization, the applicable UAX). A grouped
 // declaration may carry the shared citation on the group comment.
 func TestAPISurfaceDocumented(t *testing.T) {
-	for _, dir := range []string{".", "smtpclient"} {
+	for _, dir := range []string{".", "smtpclient", "smtpdeliver"} {
 		fset, files, ok := loadPackageDir(t, dir)
 		if !ok {
 			continue
