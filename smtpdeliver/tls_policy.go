@@ -48,6 +48,9 @@ type tlsAttempt struct {
 	// VerifyConnection, which records outcomes in report.
 	config *tls.Config
 	report *tlsReport
+	// daneTLS means RFC 7672 asked for TLS on this host (secure TLSA
+	// records), whether or not audit mode lets the attempt proceed without it.
+	daneTLS bool
 }
 
 // tlsReport collects the per-attempt PolicyResults, including outcomes
@@ -92,6 +95,9 @@ func (r *tlsReport) failDANE(err error) {
 // whether the attempt may continue in cleartext.
 func (a *tlsAttempt) noSTARTTLS() error {
 	a.report.failSTS(errTLSRequired)
+	if a.daneTLS {
+		a.report.failDANE(errTLSRequired)
+	}
 	if a.required {
 		return errTLSRequired
 	}
@@ -114,15 +120,24 @@ func (d *Deliverer) planTLS(in tlsInput) *tlsAttempt {
 		a.report.sts.Cause = nil // per-attempt outcome; the destination keeps its own
 		sts = in.sts.policy
 	}
+	audit := d.daneMode == DANEAudit
 	if d.dane {
-		a.report.dane = &PolicyResult{Kind: PolicyDANE, Mode: string(d.daneMode), Source: PolicySourceDNS, Applied: in.dane.state != daneNone && d.daneMode != DANEAudit}
+		// Applied: DANE constrained the attempt, by a requirement or by
+		// making it unreachable. Audit mode only observes.
+		a.report.dane = &PolicyResult{Kind: PolicyDANE, Mode: string(d.daneMode), Source: PolicySourceDNS, Applied: in.dane.state != daneNone && !audit}
 	}
+	a.daneTLS = in.dane.state != daneNone
 
-	// Pre-connection checks: any of these makes the candidate unreachable.
+	// Pre-connection checks: any of these makes the candidate unreachable,
+	// except in audit mode, which records the failure and proceeds at a
+	// reduced security level (RFC 7672 §9.1).
 	if in.dane.err != nil {
 		a.report.failDANE(in.dane.err)
-		a.skip = in.dane.err
-		return a
+		if !audit {
+			a.report.dane.Applied = true
+			a.skip = in.dane.err
+			return a
+		}
 	}
 	if d.dane && d.daneMode == DANEMandatory {
 		switch {
@@ -132,6 +147,7 @@ func (d *Deliverer) planTLS(in tlsInput) *tlsAttempt {
 			a.skip = errDANEMandatory
 		}
 		if a.skip != nil {
+			a.report.dane.Applied = true
 			a.report.failDANE(a.skip)
 			return a
 		}
@@ -151,7 +167,7 @@ func (d *Deliverer) planTLS(in tlsInput) *tlsAttempt {
 	}
 
 	enforce := sts != nil && sts.Mode == MTASTSEnforce
-	daneEnforced := in.dane.state != daneNone && d.daneMode != DANEAudit
+	daneEnforced := in.dane.state != daneNone && !audit
 	a.required = daneEnforced || enforce || in.requireTLS
 	if in.dane.state == daneUsable {
 		a.serverName = in.dane.baseDomain
@@ -184,34 +200,35 @@ func (d *Deliverer) planTLS(in tlsInput) *tlsAttempt {
 // verify runs inside the handshake. It returns an error only for a failure
 // that must abort the attempt; advisory failures are recorded.
 func (a *tlsAttempt) verify(cs tls.ConnectionState, in tlsInput, sts *MTASTSPolicy, enforce bool, roots *x509.CertPool) error {
+	// Both checks run and are recorded before either decides, so a report
+	// never shows a policy as passed that was simply not evaluated.
 	now := time.Now()
 	daneOK := false
+	var daneErr error
 	if in.dane.state == daneUsable {
-		if err := verifyDANE(cs.PeerCertificates, in.dane.records, in.dane.refIDs, now); err != nil {
-			a.report.failDANE(err)
-			if a.report.dane.Applied { // not audit mode
-				return err
-			}
+		if daneErr = verifyDANE(cs.PeerCertificates, in.dane.records, in.dane.refIDs, now); daneErr != nil {
+			a.report.failDANE(daneErr)
 		} else {
 			daneOK = true
 		}
 	}
-
 	needPKIX := enforce || (in.requireTLS && !daneOK)
-	checkPKIX := needPKIX || (sts != nil && sts.Mode == MTASTSTesting)
-	if !checkPKIX {
-		return nil
+	checkPKIX := needPKIX || sts != nil
+	var pkixErr error
+	if checkPKIX {
+		if pkixErr = verifyPKIX(cs.PeerCertificates, in.step.host.name, roots, now); pkixErr != nil && sts != nil {
+			a.report.failSTS(fmt.Errorf("%w: %w", errMTASTSCertificate, pkixErr))
+		}
 	}
-	if err := verifyPKIX(cs.PeerCertificates, in.step.host.name, roots, now); err != nil {
-		if sts != nil {
-			a.report.failSTS(fmt.Errorf("%w: %w", errMTASTSCertificate, err))
+
+	if daneErr != nil && a.report.dane.Applied { // audit mode proceeds
+		return daneErr
+	}
+	if pkixErr != nil && needPKIX {
+		if in.requireTLS && !enforce {
+			return fmt.Errorf("%w: %w", errRequireTLSAuth, pkixErr)
 		}
-		if needPKIX {
-			if in.requireTLS && !enforce {
-				return fmt.Errorf("%w: %w", errRequireTLSAuth, err)
-			}
-			return fmt.Errorf("%w: %w", errMTASTSCertificate, err)
-		}
+		return fmt.Errorf("%w: %w", errMTASTSCertificate, pkixErr)
 	}
 	return nil
 }

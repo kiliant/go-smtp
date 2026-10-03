@@ -59,21 +59,20 @@ func (d *Deliverer) lookupDANE(ctx context.Context, domain string, step routeSte
 		lookupCtx, cancel := context.WithTimeout(ctx, d.timeouts.DNS)
 		answer, err := d.resolver.LookupTLSA(lookupCtx, &LookupTLSARequest{Name: fmt.Sprintf("_%d._tcp.%s", smtpPort, base)})
 		cancel()
-		d.emit(Event{Kind: EventLookup, Domain: domain, MX: step.host.name, Cause: err})
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return daneResult{}, ctxErr
 		}
+		if err == nil && answer.Security != DNSSECSecure && answer.Security != DNSSECInsecure {
+			// Bogus, indeterminate, unvalidated or unknown: a lookup failure,
+			// never permission to fall back (§2.1.2).
+			err = fmt.Errorf("DNSSEC state %q", answer.Security)
+		}
+		d.emit(Event{Kind: EventLookup, Domain: domain, MX: step.host.name, Cause: err})
 		if err != nil {
 			return daneResult{err: fmt.Errorf("%w: %s: %w", errTLSALookup, base, err)}, nil
 		}
-		switch answer.Security {
-		case DNSSECSecure:
-		case DNSSECInsecure:
+		if answer.Security == DNSSECInsecure {
 			continue // §2.2.3: insecure records → try the next candidate
-		default:
-			// Bogus, indeterminate, unvalidated or unknown: a lookup failure,
-			// never permission to fall back (§2.1.2).
-			return daneResult{err: fmt.Errorf("%w: %s: DNSSEC state %q", errTLSALookup, base, answer.Security)}, nil
 		}
 		if answer.State != LookupFound && answer.State != LookupNotFound {
 			return daneResult{err: fmt.Errorf("%w: %s: unknown state %q", errTLSALookup, base, answer.State)}, nil

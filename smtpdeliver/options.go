@@ -46,9 +46,19 @@ type Options struct {
 	HTTPClient *http.Client
 	// TLSConfig supplies additional STARTTLS (RFC 3207) configuration. It is
 	// cloned per attempt. Without an applicable policy the default is
-	// unauthenticated opportunistic TLS (RFC 7435); MTA-STS and DANE add
-	// authentication. The configuration may strengthen these defaults but
-	// cannot disable an applied MTA-STS or DANE requirement.
+	// unauthenticated opportunistic TLS (RFC 7435); MTA-STS, DANE and
+	// REQUIRETLS add authentication.
+	//
+	// The Deliverer verifies certificates itself. ServerName,
+	// InsecureSkipVerify and Time are ignored: the identity comes from the
+	// route and validity is checked against the current time. RootCAs, when
+	// non-nil, replaces the system roots for Web PKI validation (RFC 8461,
+	// RFC 8689). A VerifyPeerCertificate or VerifyConnection hook runs after
+	// the Deliverer's own checks, with an empty VerifiedChains, and can reject
+	// a connection; that is how a caller strengthens verification. No field
+	// can disable an applied MTA-STS, DANE or REQUIRETLS requirement, and
+	// without such a requirement a session stays unauthenticated whatever
+	// the configuration says.
 	TLSConfig *tls.Config
 	// Identity is the client name sent in EHLO (RFC 5321 §4.1.1.1). Empty
 	// selects smtpclient's default.
@@ -117,11 +127,14 @@ type Timeouts struct {
 type DialRequest struct {
 	// Network is the network to dial, "tcp".
 	Network string
-	// Address is the selected IP address and the RFC 5321 SMTP port, 25.
+	// Address is the selected IP address and port: 25, the RFC 5321 relay
+	// port, for MX delivery.
 	Address netip.AddrPort
-	// MX is the MX host name the address was selected for (RFC 5321 §5.1).
-	// When set it is the TLS identity of the attempt, not a name to resolve
-	// again. A later routing mode that selects no MX leaves it empty.
+	// MX is the MX host name the address was selected for (RFC 5321 §5.1),
+	// as published, not a name to resolve again. It is the TLS identity of
+	// the attempt unless RFC 7672 DANE applies, in which case the identity is
+	// the TLSA base domain, possibly MX's secure CNAME expansion (RFC 7672
+	// §8.1). A later routing mode that selects no MX leaves it empty.
 	MX string
 	// Domain is the destination's routing domain and RFC 8461 Policy Domain.
 	Domain string
@@ -143,33 +156,41 @@ type MTASTSOptions struct {
 
 // DANEOptions configures RFC 7672 DANE for SMTP. A nil *DANEOptions on Options
 // disables DANE; a non-nil value with zero fields selects the defaults
-// (opportunistic DANE).
+// (opportunistic DANE). When DANE and an MTA-STS policy both apply, both sets
+// of requirements must be met: a valid MTA-STS certificate never rescues a
+// failed DANE match (RFC 8461 §2), and DANE success does not waive an
+// MTA-STS enforce policy.
 //
 // Callers constructing a DANEOptions literal must use keyed fields.
 type DANEOptions struct {
-	// Mode selects how absent or unusable TLSA records (RFC 7672 §2.2) are
-	// treated. Empty means DANEOpportunistic.
+	// Mode selects how strictly RFC 7672 DANE is enforced. Empty means
+	// DANEOpportunistic.
 	Mode DANEMode
 
 	_ struct{}
 }
 
-// DANEMode selects how RFC 7672 DANE treats a destination without usable
-// secure TLSA records. It is an open string type: New rejects a mode it does
-// not implement rather than guessing at its meaning.
+// DANEMode selects how strictly a Deliverer enforces RFC 7672 DANE. It is an
+// open string type: New rejects a mode it does not implement rather than
+// guessing at its meaning.
 type DANEMode string
 
 // RFC 7672 DANE modes.
 const (
-	// DANEOpportunistic uses DANE where secure usable TLSA records exist and
-	// otherwise falls back to ordinary opportunistic TLS (RFC 7672 §2.2).
+	// DANEOpportunistic applies RFC 7672 where the MX host and its addresses
+	// are DNSSEC-secure. A secure TLSA RRset requires TLS, and usable records
+	// also require the certificate to match one of them; a failed TLSA
+	// lookup makes that MX unreachable. Without secure TLSA records delivery
+	// falls back to ordinary opportunistic TLS (RFC 7672 §2.2).
 	DANEOpportunistic DANEMode = "opportunistic"
 	// DANEMandatory treats the absence of secure usable TLSA records as a
 	// temporary failure. It is local policy layered on RFC 7672, which itself
 	// is opportunistic.
 	DANEMandatory DANEMode = "mandatory"
-	// DANEAudit records DANE validation failures without blocking delivery,
-	// the "audit only" mode of RFC 7672 §9.1.
+	// DANEAudit records DANE failures, including TLSA lookup failures, a
+	// missing STARTTLS and certificate mismatches, without blocking delivery:
+	// the "audit only" mode of RFC 7672 §9.1. Delivery then proceeds with
+	// ordinary opportunistic TLS.
 	DANEAudit DANEMode = "audit"
 )
 

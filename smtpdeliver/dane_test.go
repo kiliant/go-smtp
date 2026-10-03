@@ -489,6 +489,7 @@ func TestTLSDecisionTable(t *testing.T) {
 		{name: "mandatory DANE without usable records: unreachable", mode: DANEMandatory, skip: errDANEMandatory},
 		{name: "mandatory DANE with insecure MX: unreachable", mode: DANEMandatory, insecureMX: true, dane: daneFor(selfSignedMX), skip: errDANEInsecureMX},
 		{name: "audit DANE: mismatch recorded, delivery proceeds", mode: DANEAudit, dane: daneFor(otherKey), server: func(*testPKI) leafCert { return selfSignedMX }, handshake: true, daneCause: true},
+		{name: "audit DANE: TLSA lookup failure recorded, delivery proceeds", mode: DANEAudit, dane: daneResult{err: errTLSALookup}, server: untrusted, handshake: true, daneCause: true},
 		{name: "REQUIRETLS with insecure MX and no MTA-STS: unreachable", requireTLS: true, insecureMX: true, skip: errRequireTLSMXNotValid},
 		{name: "REQUIRETLS with secure MX: Web PKI required", requireTLS: true, server: good, required: true, handshake: true},
 		{name: "REQUIRETLS with secure MX: untrusted fails", requireTLS: true, server: untrusted, required: true},
@@ -597,6 +598,50 @@ func TestTLSAttemptDetails(t *testing.T) {
 		a := d.planTLS(tlsInput{domain: "example.com", step: step, sts: dec})
 		if pr := a.report.policies(); pr[0].Cause != nil {
 			t.Errorf("attempt MTA-STS cause = %v, want nil before the handshake", pr[0].Cause)
+		}
+	})
+}
+
+func TestDANEReportSemantics(t *testing.T) {
+	f := newFakeResolver(DNSSECSecure)
+	step := secureStep("mx.example.com")
+	usable := daneResult{state: daneUsable, baseDomain: "mx.example.com", records: []TLSA{{Usage: 3, Selector: 1, MatchingType: 1, Association: make([]byte, 32)}}}
+	daneOf := func(a *tlsAttempt) PolicyResult {
+		for _, pr := range a.report.policies() {
+			if pr.Kind == PolicyDANE {
+				return pr
+			}
+		}
+		t.Fatal("no DANE result")
+		return PolicyResult{}
+	}
+	t.Run("a skip caused by DANE is Applied", func(t *testing.T) {
+		d := daneDeliverer(t, f, "", nil)
+		if pr := daneOf(d.planTLS(tlsInput{domain: "example.com", step: step, dane: daneResult{err: errTLSALookup}})); !pr.Applied || pr.Cause == nil {
+			t.Errorf("lookup failure: %+v", pr)
+		}
+		m := daneDeliverer(t, f, DANEMandatory, nil)
+		if pr := daneOf(m.planTLS(tlsInput{domain: "example.com", step: step})); !pr.Applied || pr.Cause == nil {
+			t.Errorf("mandatory without records: %+v", pr)
+		}
+	})
+	t.Run("missing STARTTLS is a DANE failure when DANE asked for TLS", func(t *testing.T) {
+		for _, mode := range []DANEMode{"", DANEAudit} {
+			d := daneDeliverer(t, f, mode, nil)
+			a := d.planTLS(tlsInput{domain: "example.com", step: step, dane: usable})
+			err := a.noSTARTTLS()
+			if pr := daneOf(a); !errors.Is(pr.Cause, errTLSRequired) {
+				t.Errorf("mode %q: DANE result %+v, want the missing STARTTLS recorded", mode, pr)
+			}
+			if (err != nil) != (mode != DANEAudit) {
+				t.Errorf("mode %q: noSTARTTLS = %v", mode, err)
+			}
+		}
+	})
+	t.Run("audit mode is never Applied", func(t *testing.T) {
+		d := daneDeliverer(t, f, DANEAudit, nil)
+		if pr := daneOf(d.planTLS(tlsInput{domain: "example.com", step: step, dane: usable})); pr.Applied {
+			t.Errorf("audit: %+v", pr)
 		}
 	})
 }

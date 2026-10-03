@@ -6,6 +6,12 @@
 exception. That RFC has no §8.3; the "audit only" mode is defined in §9.1. The
 design is unchanged.
 
+*Clarification, 2026-10-03 (T28 review):* §6 says SNI and the normal
+certificate identity are the MX hostname. When DANE applies, RFC 7672 §8.1
+makes the SNI the TLSA base domain, which may be the MX hostname's secure
+CNAME expansion; the Web PKI checks of MTA-STS and REQUIRETLS still use the MX
+hostname.
+
 This document is T14's deliverable. It designs `smtpdeliver`, the post-v1
 package that decides which SMTP endpoint to contact and makes one bounded
 delivery attempt. It does not implement a queue, schedule retries, generate
