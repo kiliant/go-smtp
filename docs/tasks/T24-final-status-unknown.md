@@ -4,9 +4,14 @@
 **Depends on:** T14 (approved design)
 
 **Owns:** `smtpclient/finalstatus.go` (new), the final-completion paths in
-`smtpclient/{data,ext_a_transport,ext_b_burl,lmtp}.go`, the `DataResult` doc
-comment in `result.go`, and colocated tests. Appends cases to
-`smtpclient/fakeserver_test.go` under its append-only rule.
+`smtpclient/{data,ext_a_transport,ext_b_burl,lmtp}.go`, the `queuedCommand`
+completion marker and its classification in `smtpclient/pipeline.go`, the
+`Client` cancellation-contract doc comment in `smtpclient/client.go`, the
+`DataResult` doc comment in `result.go`, the `Error.Err` doc comment in
+`error.go`, and colocated tests. Appends cases to
+`smtpclient/fakeserver_test.go` under its append-only rule. The `pipeline.go`,
+`client.go` and `error.go` items were added after api-guardian's first review
+(R1, R4, R5 and A1).
 
 This is work package D00 of `docs/DELIVERY-DESIGN.md` §11. It is the one root
 client change the delivery layer needs, and it is **additive**: one new exported
@@ -81,14 +86,26 @@ This is the first time `Data` returns a non-empty result together with a
 non-nil error. Update the `DataResult` doc comment (`result.go`) and the `Data`
 and `BURL` doc comments to state the partial-result-on-error contract.
 
-### 4. Open question, decide with api-guardian
+### 4. Extra LMTP final replies (decided, api-guardian approved)
 
 `rejectExtraLMTPFinalReply` fails *after* all `n` replies arrived, because the
-peer sent too many. Every status is known, so this is **not**
-`ErrFinalStatusUnknown`. Today the result is discarded. Decide whether to return
-the full result with the protocol error, and record the decision in
-`.state/progress/T24.md`. The design does not settle this case. Do not treat
-this as an invitation to widen scope.
+peer sent too many. **Decision:** `ErrFinalStatusUnknown` with a **nil**
+result. Once the reply count is wrong, no reply can be matched to a recipient
+with confidence: one extra reply at the front shifts every status. The
+sentinel's doc reserves a later refinement. Loosening this later, from
+"unknown" to "known", is safe. Tightening it later would turn a status callers
+trusted into an unknown, which is the unsafe direction.
+
+The same conservative result applies when the probe fails because the peer
+closed the connection cleanly after the last expected reply. A later release
+may return the full result in that case.
+
+### 5. A session-level 421 inside an LMTP reply stream
+
+A 421 (RFC 5321 §3.8) answers no recipient. Inside the per-recipient stream it
+ends the stream early: the prefix before it is authoritative, and the error
+keeps the 421 reply and also wraps the sentinel. In SMTP mode a 421 *is* the
+single final reply and stays authoritative.
 
 ## Testing
 

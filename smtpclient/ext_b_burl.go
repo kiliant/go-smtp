@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	smtp "github.com/kiliant/go-smtp"
+	"github.com/kiliant/go-smtp/internal/smtpwire"
 )
 
 // BURLOptions configures RFC 4468 BURL. Last ends the mail transaction. A nil
@@ -24,6 +25,10 @@ type BURLOptions struct {
 // returns one result per accepted recipient; SMTP's single final reply is
 // copied to every result. A non-LAST BURL returns an empty result and leaves
 // the transaction open for another BURL or BDAT command.
+//
+// A failure after a BURL carrying LAST may have been sent, and before its
+// reply was received, wraps ErrFinalStatusUnknown: the server may have
+// accepted the message.
 //
 // RFC 4468 defines BURL only for SMTP Message Submission. BURL is rejected
 // locally in LMTP mode even if the peer advertises the extension token.
@@ -56,7 +61,7 @@ func (c *Client) BURL(ctx context.Context, url string, opts *BURLOptions) (smtp.
 	if len(recipients) == 0 {
 		return nil, errors.New("smtpclient: BURL requires an accepted recipient")
 	}
-	reply, err := c.commandLocked(ctx, "BURL", args, c.conn.dataCommandTimeout, stateTransaction)
+	reply, err := c.burlLocked(ctx, args, last)
 	if err != nil {
 		return nil, err
 	}
@@ -88,4 +93,21 @@ func (c *Client) BURL(ctx context.Context, url string, opts *BURLOptions) (smtp.
 		}
 	}
 	return result, nil
+}
+
+// burlLocked sends one BURL command and reads its reply. BURL LAST completes
+// the mail transaction, so the pipeline classifies a failure after its write
+// has begun as ErrFinalStatusUnknown.
+func (c *Client) burlLocked(ctx context.Context, args []string, last bool) (smtpwire.Reply, error) {
+	c.conn.mu.Lock()
+	state := c.conn.state
+	c.conn.mu.Unlock()
+	if err := invalidState("BURL", state, stateTransaction); err != nil {
+		return smtpwire.Reply{}, err
+	}
+	replies, err := c.conn.pipeline.executeLocked(ctx, []queuedCommand{{verb: "BURL", args: args, timeout: c.conn.dataCommandTimeout(), completes: last}})
+	if err != nil {
+		return smtpwire.Reply{}, err
+	}
+	return replies[0], nil
 }

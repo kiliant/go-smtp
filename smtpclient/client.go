@@ -111,9 +111,13 @@ type StartTLSOptions struct {
 // not multiplexed.
 //
 // Cancellation: SMTP has no command abort. If a context is cancelled after a
-// command has reached the wire, Client closes and poisons the connection and
-// returns context.Canceled rather than retaining a desynchronized session.
-// Commands added by later protocol tasks refer to this contract.
+// command has reached the wire, Client closes and poisons the connection
+// rather than retaining a desynchronized session, and returns an error for
+// which errors.Is(err, context.Canceled) reports true. Once an operation that
+// completes a mail transaction may have reached the peer, that error is an
+// *smtp.Error that also wraps ErrFinalStatusUnknown, because the server may
+// already have accepted the message (RFC 5321 §4.2.5). Commands added by later
+// protocol tasks refer to this contract.
 type Client struct {
 	conn *connection
 }

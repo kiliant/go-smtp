@@ -36,7 +36,9 @@ func readLMTPFinalReplies(ctx context.Context, c *Client, recipients []string) (
 			// pipeline.read poisons errors that could desynchronise the reply
 			// stream. Keep this explicit for any future alternate reader.
 			c.conn.poison()
-			return nil, true, err
+			// The replies already read are authoritative for their
+			// recipients; the rest may or may not have been delivered.
+			return authoritativePrefix(result, i), true, finalStatusUnknownStream("DATA", err)
 		}
 		errReply := replyError("DATA", reply, c.conn.enhancedStatusCodes())
 		result[i] = smtp.RecipientResult{
@@ -52,7 +54,9 @@ func readLMTPFinalReplies(ctx context.Context, c *Client, recipients []string) (
 	// client command, so retaining the session would misattribute them.
 	if err := c.rejectExtraLMTPFinalReply("DATA"); err != nil {
 		c.conn.poison()
-		return nil, true, err
+		// An extra reply means the replies cannot be attributed to
+		// recipients with confidence, so none of them is authoritative.
+		return nil, true, finalStatusUnknownStream("DATA", err)
 	}
 
 	// An LMTP transaction completes only after every expected final reply has

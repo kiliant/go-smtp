@@ -28,6 +28,12 @@ type DataOptions struct {
 // through RFC 5321 dot transparency without buffering. Its result is one
 // smtp.RecipientResult per accepted recipient: SMTP's one final reply is
 // copied to each entry so the result shape remains compatible with LMTP.
+//
+// A failure after the end-of-data terminator may have been sent, and before a
+// final reply was received, wraps ErrFinalStatusUnknown: the server may have
+// accepted the message. In LMTP mode Data then also returns the authoritative
+// per-recipient results already received; ErrFinalStatusUnknown documents the
+// contract.
 func (c *Client) Data(ctx context.Context, r io.Reader, opts *DataOptions) (smtp.DataResult, error) {
 	if c == nil || c.conn == nil {
 		return nil, errNilClient
@@ -88,20 +94,23 @@ func (c *Client) Data(ctx context.Context, r io.Reader, opts *DataOptions) (smtp
 			return nil, transportError("DATA", readErr)
 		}
 	}
+	// Close writes the end-of-data terminator. From here on a failure may
+	// follow the server's acceptance, so it carries ErrFinalStatusUnknown
+	// unless a reply was actually received.
 	if err := dw.Close(); err != nil {
 		c.conn.poison()
-		return nil, transportError("DATA", err)
+		return nil, finalStatusUnknown("DATA", transportError("DATA", err))
 	}
 	if err := ctx.Err(); err != nil {
 		c.conn.poison()
-		return nil, err
+		return nil, finalStatusUnknown("DATA", err)
 	}
 	if result, handled, err := lmtpFinalReplies(ctx, c, recipients); handled {
 		return result, err
 	}
 	reply, err := c.conn.pipeline.read(ctx, "DATA", c.conn.dataFinalTimeout())
 	if err != nil {
-		return nil, err
+		return nil, finalStatusUnknown("DATA", err)
 	}
 	c.conn.mu.Lock()
 	if c.conn.state != stateClosed {

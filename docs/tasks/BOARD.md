@@ -91,7 +91,7 @@ owner:
 | [T21](T21-server-extensions.md) | Server extensions beyond the floor, incl. `ATRN` | M6 | T20 | `smtpserver/ext_*.go` | server-core |
 | [T22](T22-server-conformance.md) | Server conformance, interop, fuzzing, security tests | M6 | T20 | `interop/servers/gosmtp/**`, `smtpserver/**/*_fuzz_test.go` | fuzz-hardening + interop-harness |
 | [T23](T23-server-release.md) | Server API review, docs, `smtpserver` release | M6 | T21, T22 | `smtpserver` docs, examples, release | docs-release + api-guardian |
-| [T24](T24-final-status-unknown.md) | D00 — `smtpclient.ErrFinalStatusUnknown` | M7 | T14 | `smtpclient/finalstatus.go`; final-completion paths in `smtpclient/{data,ext_a_transport,ext_b_burl,lmtp}.go`; `DataResult` doc comment in `result.go` | client-core + api-guardian |
+| [T24](T24-final-status-unknown.md) | D00 — `smtpclient.ErrFinalStatusUnknown` | M7 | T14 | `smtpclient/finalstatus.go`; final-completion paths in `smtpclient/{data,ext_a_transport,ext_b_burl,lmtp}.go`; the completion marker in `smtpclient/pipeline.go`; doc comments for the `Client` cancellation contract (`smtpclient/client.go`), `DataResult` (`result.go`) and `Error.Err` (`error.go`) | client-core + api-guardian |
 | [T25](T25-delivery-skeleton.md) | D01 — `smtpdeliver` skeleton, public types, API gates, stdlib resolver | M7 | T14 | `smtpdeliver/{doc,deliverer,options,request,result,resolver,event,resolver_std}.go`, `smtpdeliver/api_surface_test.go` | client-core + api-guardian |
 | [T26](T26-delivery-routing.md) | D02 — MX routing, null MX, loop elimination, address order | M7 | T25 | `smtpdeliver/route_*.go` | client-core |
 | [T27](T27-mta-sts.md) | D03 — MTA-STS parsers, fetch, cache state machine | M7 | T25 | `smtpdeliver/mtasts_*.go` | client-core |

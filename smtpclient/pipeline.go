@@ -23,6 +23,11 @@ type queuedCommand struct {
 	args      []string
 	syncPoint bool
 	timeout   time.Duration
+	// completes marks a command that completes a mail transaction, such as
+	// BURL LAST. Once writing it has begun, a failure before its reply is
+	// received may follow the server's acceptance and is classified as
+	// ErrFinalStatusUnknown. Failures detected before the write are not.
+	completes bool
 }
 
 type pipeline struct {
@@ -93,7 +98,15 @@ func (p *pipeline) executeLocked(ctx context.Context, commands []queuedCommand) 
 			if end > start && bytes+encoded > maxPipelineBytes {
 				break
 			}
+			if cmd.completes {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+			}
 			if err := p.write(ctx, cmd); err != nil {
+				if cmd.completes {
+					return nil, finalStatusUnknown(cmd.verb, err)
+				}
 				return nil, err
 			}
 			bytes += encoded
@@ -105,6 +118,9 @@ func (p *pipeline) executeLocked(ctx context.Context, commands []queuedCommand) 
 		for i := start; i < end; i++ {
 			reply, err := p.read(ctx, commands[i].verb, commands[i].timeout)
 			if err != nil {
+				if commands[i].completes {
+					return nil, finalStatusUnknown(commands[i].verb, err)
+				}
 				return nil, err
 			}
 			results = append(results, reply)
