@@ -32,6 +32,7 @@ const (
 type Deliverer struct {
 	resolver        Resolver
 	cache           *PolicyCache
+	mtasts          *mtastsState // non-nil when MTA-STS is enabled (T27)
 	daneMode        DANEMode
 	dane            bool
 	dial            func(ctx context.Context, req *DialRequest) (net.Conn, error)
@@ -150,6 +151,9 @@ func New(opts *Options) (*Deliverer, error) {
 	}
 	if opts.TLSConfig != nil {
 		d.tlsConfig = opts.TLSConfig.Clone()
+	}
+	if d.cache != nil {
+		d.mtasts = newMTASTSState(d, *d.cache)
 	}
 	return d, nil
 }
