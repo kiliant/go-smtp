@@ -117,6 +117,18 @@ it in.
   additive field.
 - When the server's reply has no enhanced code, `Status` stays zero. Do not
   derive one from the basic reply code.
+- **REQUIRETLS (RFC 8689 §4.2.1).** When `smtp.DeliveryOptions.RequireTLS` is
+  set, every candidate must satisfy two conditions:
+  - its MX name is DNSSEC-validated or matches an MTA-STS policy (§4.1);
+  - its certificate authenticates by PKIX against the MX name, or by DANE.
+
+  T28's TLS decision enforces this per candidate. When candidates run out, the
+  outcome is **permanent**:
+  - 5.7.10 when no TLS-protected session could be established;
+  - 5.7.30 when servers did not advertise REQUIRETLS.
+
+  The RFC requires a non-delivery notification here, unlike the temporary
+  exhaustion of MTA-STS `enforce`.
 
 ## Done when
 

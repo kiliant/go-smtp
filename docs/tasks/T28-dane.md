@@ -29,7 +29,10 @@ permission to fall back.
 
 - Usages: DANE-TA(2) and DANE-EE(3) only. PKIX-TA(0) and PKIX-EE(1) records, and
   unknown selector or matching-type combinations, are **unusable**, not errors.
-  When every record is unusable, the result is "no usable TLSA records".
+  A **secure** TLSA RRset in which every record is unusable still requires
+  TLS, though not authentication (RFC 7672 §2.2 and §2.2.3: a secure TLSA
+  record signals the server's commitment to STARTTLS). Under mandatory DANE
+  it counts as "no usable TLSA records".
 - Selectors: full certificate (0) and SubjectPublicKeyInfo (1). Matching types:
   exact (0), SHA-256 (1), SHA-512 (2).
 - DANE-EE(3) does no PKIX name or expiry checks. DANE-TA(2) chains to the
@@ -41,7 +44,7 @@ permission to fall back.
 ### 3. Modes and precedence
 
 - Empty `DANEMode` means opportunistic. Mandatory mode turns "no usable TLSA" into
-  a temporary failure. Audit mode (RFC 7672 §8.3) applies only on explicit
+  a temporary failure. Audit mode (RFC 7672 §9.1, "audit only") applies only on explicit
   request. All three are open string values.
 - **A secure TLSA failure always blocks. MTA-STS never overrides it**, and an
   MTA-STS-valid certificate does not rescue a failed DANE match (RFC 8461 §2).
