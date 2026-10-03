@@ -2,6 +2,10 @@
 
 **Status: APPROVED, revision 2, 2026-08-12.**
 
+*Citation correction, 2026-10-03:* §3 cited "RFC 7672 §8.3" for the audit-only
+exception. That RFC has no §8.3; the "audit only" mode is defined in §9.1. The
+design is unchanged.
+
 This document is T14's deliverable. It designs `smtpdeliver`, the post-v1
 package that decides which SMTP endpoint to contact and makes one bounded
 delivery attempt. It does not implement a queue, schedule retries, generate
@@ -323,7 +327,7 @@ DANE is opportunistic by default: no secure usable TLSA records falls back to
 ordinary opportunistic TLS. A caller may select mandatory DANE through an open
 string-backed option; in that mode, absence of usable TLSA records is temporary,
 not permanent. An optional audit mode may record a failure and continue only
-when the caller explicitly requests the RFC 7672 §8.3 exception.
+when the caller explicitly requests the RFC 7672 §9.1 "audit only" mode.
 
 When DANE and MTA-STS both apply, their requirements intersect. A secure TLSA
 failure always blocks; MTA-STS must never override it. An MTA-STS-valid

@@ -169,7 +169,7 @@ const (
 	// is opportunistic.
 	DANEMandatory DANEMode = "mandatory"
 	// DANEAudit records DANE validation failures without blocking delivery,
-	// the explicit exception of RFC 7672 §8.3.
+	// the "audit only" mode of RFC 7672 §9.1.
 	DANEAudit DANEMode = "audit"
 )
 
