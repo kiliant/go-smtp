@@ -42,3 +42,10 @@ const (
 	// EventAttempt is a finished SMTP attempt (RFC 5321 §3).
 	EventAttempt EventKind = "attempt"
 )
+
+// emit sends e to Options.Trace, if set.
+func (d *Deliverer) emit(e Event) {
+	if d.trace != nil {
+		d.trace(e)
+	}
+}
