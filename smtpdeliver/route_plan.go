@@ -404,10 +404,3 @@ func noAddressFailure(hosts []routeHost, steps []routeStep) *routeFailure {
 	}
 	return &routeFailure{disposition: DispositionPermanent, status: status, cause: errNoUsableMX, steps: steps}
 }
-
-// emit sends e to Options.Trace, if set.
-func (d *Deliverer) emit(e Event) {
-	if d.trace != nil {
-		d.trace(e)
-	}
-}
