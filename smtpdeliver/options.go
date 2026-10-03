@@ -57,8 +57,8 @@ type Options struct {
 	// the Deliverer's own checks, with an empty VerifiedChains, and can reject
 	// a connection; that is how a caller strengthens verification. No field
 	// can disable an applied MTA-STS, DANE or REQUIRETLS requirement, and
-	// without such a requirement a session stays unauthenticated whatever
-	// the configuration says.
+	// without such a requirement the Deliverer itself authenticates nothing;
+	// only the caller's own hooks can.
 	TLSConfig *tls.Config
 	// Identity is the client name sent in EHLO (RFC 5321 §4.1.1.1). Empty
 	// selects smtpclient's default.
@@ -180,8 +180,8 @@ const (
 	// DANEOpportunistic applies RFC 7672 where the MX host and its addresses
 	// are DNSSEC-secure. A secure TLSA RRset requires TLS, and usable records
 	// also require the certificate to match one of them; a failed TLSA
-	// lookup makes that MX unreachable. Without secure TLSA records delivery
-	// falls back to ordinary opportunistic TLS (RFC 7672 §2.2).
+	// lookup makes that MX unreachable. Without secure TLSA records DANE adds
+	// no requirement (RFC 7672 §2.2); MTA-STS and REQUIRETLS still apply.
 	DANEOpportunistic DANEMode = "opportunistic"
 	// DANEMandatory treats the absence of secure usable TLSA records as a
 	// temporary failure. It is local policy layered on RFC 7672, which itself
@@ -189,8 +189,8 @@ const (
 	DANEMandatory DANEMode = "mandatory"
 	// DANEAudit records DANE failures, including TLSA lookup failures, a
 	// missing STARTTLS and certificate mismatches, without blocking delivery:
-	// the "audit only" mode of RFC 7672 §9.1. Delivery then proceeds with
-	// ordinary opportunistic TLS.
+	// the "audit only" mode of RFC 7672 §9.1. DANE then adds no requirement;
+	// MTA-STS and REQUIRETLS still apply.
 	DANEAudit DANEMode = "audit"
 )
 
