@@ -3,7 +3,6 @@ package smtpdeliver
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"io"
 	"net/http"
 	"net/netip"
@@ -254,21 +253,17 @@ func TestValidateRequest(t *testing.T) {
 	})
 }
 
-func TestStubsValidateBeforeReportingUnimplemented(t *testing.T) {
+func TestDeliverAndRefreshValidateFirst(t *testing.T) {
 	d, err := New(&Options{LocalNames: []string{"mx.sender.test"}, MTASTS: &MTASTSOptions{Cache: validCache()}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := d.Deliver(ctx, nil, nil); err == nil || errors.Is(err, errNotImplemented) {
+	if _, err := d.Deliver(ctx, nil, nil); err == nil || !strings.Contains(err.Error(), "nil Request") {
 		t.Errorf("Deliver(nil) = %v, want a validation error", err)
 	}
-	req := &Request{Message: stringSource("x"), Destinations: oneDestination("example.com", "a@example.com")}
-	if _, err := d.Deliver(ctx, req, nil); !errors.Is(err, errNotImplemented) {
-		t.Errorf("Deliver(valid) = %v, want errNotImplemented until T29", err)
-	}
-	if _, err := d.RefreshPolicy(ctx, "bad domain", nil); err == nil || errors.Is(err, errNotImplemented) {
-		t.Errorf("RefreshPolicy(invalid) = %v, want a validation error", err)
+	if _, err := d.RefreshPolicy(ctx, "bad domain", nil); err == nil {
+		t.Error("RefreshPolicy(invalid) succeeded")
 	}
 	plain, err := New(baseOptions())
 	if err != nil {
