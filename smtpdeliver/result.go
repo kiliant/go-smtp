@@ -95,9 +95,10 @@ type AttemptResult struct {
 	// Policies are the transport policies (RFC 8461, RFC 7672) applied to the
 	// attempt and how each fared.
 	Policies []PolicyResult
-	// Cause is why the attempt ended before completing its transaction, or
-	// nil if it completed one. A completed transaction can still carry
-	// negative replies; those are recorded on the recipient outcomes.
+	// Cause is why the attempt ended when it did not end on server replies:
+	// a connection, TLS, policy or transport failure. It is nil when the
+	// attempt ended on replies, positive or negative, at any stage; those
+	// replies are recorded on the recipient outcomes.
 	Cause error
 
 	_ struct{}
@@ -178,8 +179,8 @@ const (
 	// StageContent is transferring and completing the content (RFC 5321
 	// §4.1.1.4).
 	StageContent AttemptStage = "content"
-	// StageComplete means the transaction finished, whatever its replies
-	// (RFC 5321 §3.3).
+	// StageComplete means final replies to the content arrived, whatever
+	// they said (RFC 5321 §3.3).
 	StageComplete AttemptStage = "complete"
 )
 

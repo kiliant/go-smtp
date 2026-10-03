@@ -131,6 +131,15 @@ func (d *Deliverer) validateRequest(request *Request) ([]destination, error) {
 			return nil, fmt.Errorf("smtpdeliver: Request.Message.Size %d disagrees with MailOptions.Transport.Size %d", *size, *mo.Transport.Size)
 		}
 	}
+	smtpUTF8 := request.MailOptions != nil && request.MailOptions.Transport != nil && request.MailOptions.Transport.SMTPUTF8
+	if err := validatePath("EnvelopeFrom", request.EnvelopeFrom, smtpUTF8, true); err != nil {
+		return nil, err
+	}
+	if request.MailOptions != nil {
+		if err := validateParams("MailOptions.Extra", request.MailOptions.Extra); err != nil {
+			return nil, err
+		}
+	}
 	if len(request.Destinations) == 0 {
 		return nil, errors.New("smtpdeliver: Request has no destinations")
 	}
@@ -154,6 +163,15 @@ func (d *Deliverer) validateRequest(request *Request) ([]destination, error) {
 		for k, rcpt := range dest.Recipients {
 			if rcpt.Address == "" {
 				return nil, fmt.Errorf("smtpdeliver: Destinations[%d].Recipients[%d] has an empty address", i, k)
+			}
+			where := fmt.Sprintf("Destinations[%d].Recipients[%d]", i, k)
+			if err := validatePath(where, rcpt.Address, smtpUTF8, false); err != nil {
+				return nil, err
+			}
+			if rcpt.Options != nil {
+				if err := validateParams(where+".Options.Extra", rcpt.Options.Extra); err != nil {
+					return nil, err
+				}
 			}
 		}
 		out = append(out, destination{domain: domain, recipients: append([]Recipient(nil), dest.Recipients...)})
@@ -192,4 +210,49 @@ func normalizeDomain(name string) (string, error) {
 		}
 	}
 	return strings.ToLower(trimmed), nil
+}
+
+// validatePath rejects addresses no SMTP command can carry: framing
+// characters that would end or split a path (RFC 5321 §4.1.2) and, without
+// SMTPUTF8 requested, non-ASCII (RFC 6531 §3.2). Doing this before any I/O
+// keeps one malformed recipient from failing every candidate as if the
+// servers were at fault.
+func validatePath(where, path string, smtpUTF8, allowEmpty bool) error {
+	if path == "" {
+		if allowEmpty {
+			return nil
+		}
+		return fmt.Errorf("smtpdeliver: %s is empty", where)
+	}
+	for i := 0; i < len(path); i++ {
+		switch c := path[i]; {
+		case c < 0x20 || c == 0x7f || c == ' ' || c == '<' || c == '>':
+			return fmt.Errorf("smtpdeliver: %s %q contains %q, which cannot appear in an SMTP path (RFC 5321 §4.1.2)", where, path, c)
+		case c >= 0x80 && !smtpUTF8:
+			return fmt.Errorf("smtpdeliver: %s %q is not ASCII; set MailOptions.Transport.SMTPUTF8 (RFC 6531 §3.2)", where, path)
+		}
+	}
+	return nil
+}
+
+// validateParams checks caller-supplied esmtp-params against RFC 5321
+// §4.1.2: an esmtp-keyword of letters, digits and "-", and an optional value
+// of visible ASCII other than "=".
+func validateParams(where string, params []smtp.Param) error {
+	for i, p := range params {
+		if p.Keyword == "" || !isAlnum(p.Keyword[0]) {
+			return fmt.Errorf("smtpdeliver: %s[%d] has an invalid keyword %q (RFC 5321 §4.1.2)", where, i, p.Keyword)
+		}
+		for j := 1; j < len(p.Keyword); j++ {
+			if c := p.Keyword[j]; !isAlnum(c) && c != '-' {
+				return fmt.Errorf("smtpdeliver: %s[%d] has an invalid keyword %q (RFC 5321 §4.1.2)", where, i, p.Keyword)
+			}
+		}
+		for j := 0; j < len(p.Value); j++ {
+			if c := p.Value[j]; c < 0x21 || c > 0x7e || c == '=' {
+				return fmt.Errorf("smtpdeliver: %s[%d] %s has an invalid value (RFC 5321 §4.1.2)", where, i, p.Keyword)
+			}
+		}
+	}
+	return nil
 }

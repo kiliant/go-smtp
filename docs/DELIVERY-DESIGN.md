@@ -786,6 +786,26 @@ contract, not a later hardening enhancement.
 
 ---
 
+## 12. Implementation decisions recorded during T29 (2026-10-03)
+
+These refine §§6–8 where the design left a choice open. They were raised in
+T29's API review and are recorded here rather than only in coordination
+notes.
+
+| Situation | Decision | Basis |
+|---|---|---|
+| A server answers RCPT with a 2yz other than 250/251 | Abandon that candidate before DATA; the recipients stay pending for the next candidate | `smtpclient` keeps only 250/251 in a transaction, so content sent now could reach a recipient this side cannot account for |
+| Final replies cannot be matched one to one to accepted recipients | Every affected recipient is `indeterminate` | RFC 5321 §4.2.5: never retry what may have been accepted |
+| REQUIRETLS, every candidate failed | Permanent 5.7.10 (5.7.30 when REQUIRETLS was not advertised) only if every failure was a requirement failure: no STARTTLS offered, a 5yz to STARTTLS, a certificate or DANE authentication failure, an MX neither DNSSEC- nor MTA-STS-validated, or REQUIRETLS not advertised. A 4yz to STARTTLS, a network error, a refused connection, or any failure on a candidate that met the requirements leaves the ordinary temporary outcome | RFC 8689 §4.2.1 |
+| A 454 to STARTTLS on an opportunistic session | The candidate fails; no cleartext on that address | §6 ("never retries a failed advertised STARTTLS handshake in cleartext"); a separate rule from REQUIRETLS classification |
+| The message needs SMTPUTF8, 8BITMIME or BINARYMIME and a server lacks it | That candidate fails before MAIL; if every candidate failed that way, permanent 5.6.7 (SMTPUTF8) or 5.6.3 (8-bit or binary) | RFC 6531 §3.5, RFC 6152 §3 (return rather than retry forever), RFC 3463 §3.7 |
+| DSN parameters and a server without DSN | Relay without them | RFC 3461 §4 relay behaviour; reporting the "relayed" status later is an additive `RecipientOutcome` field |
+| Addresses with framing characters, non-ASCII without SMTPUTF8, malformed `Extra` parameters | Rejected by request validation before any I/O | One malformed recipient must not fail every candidate as if servers were at fault. Like `New`'s, this validation may only be loosened after the release |
+| The call ends early (cancellation, message source failure) | A recipient with a failure from an earlier completed attempt keeps it as `temporary-failure`; only recipients never reached are `not-attempted`. Cancellation before any work still returns one result per destination | §8 and `Deliver`'s documented contract |
+| `AttemptResult.Cause` | Nil whenever the attempt ended on server replies, positive or negative; `StageComplete` means final replies to the content arrived | T29 review; replies belong on recipient outcomes |
+
+---
+
 ## Appendix: RFC claims checked for this revision
 
 | Claim | Source |
