@@ -235,8 +235,9 @@ type PolicyCacheEntry struct {
 	// Policy is the parsed view of Body, for the caller's inspection. It is
 	// ignored on Load; the Deliverer reparses Body instead.
 	Policy MTASTSPolicy
-	// FetchedAt is when the policy was fetched. Expiry is FetchedAt plus
-	// Policy.MaxAge (RFC 8461 §5.1) and is never extended by a failed refresh.
+	// FetchedAt is when the policy was fetched. Expiry is FetchedAt plus the
+	// max_age parsed from Body (RFC 8461 §5.1), never Policy.MaxAge, and is
+	// never extended by a failed refresh.
 	FetchedAt time.Time
 
 	_ struct{}

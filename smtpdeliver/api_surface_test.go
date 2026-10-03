@@ -150,6 +150,22 @@ func functionViolations(fset *token.FileSet, files map[string]*ast.File, allowed
 // is (context.Context, *T) and returns error last; a notification is (T) or
 // (*T). T is a type of this package.
 func callbackSignatureViolations(fset *token.FileSet, files map[string]*ast.File) []string {
+	// A field may also use a named function type declared in this package;
+	// resolve it so the shape rule cannot be bypassed by naming the type.
+	named := map[string]*ast.FuncType{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
+				for _, spec := range gd.Specs {
+					if ts, ok := spec.(*ast.TypeSpec); ok {
+						if ft, ok := ts.Type.(*ast.FuncType); ok {
+							named[ts.Name.Name] = ft
+						}
+					}
+				}
+			}
+		}
+	}
 	var out []string
 	for _, f := range files {
 		for _, decl := range f.Decls {
@@ -168,6 +184,9 @@ func callbackSignatureViolations(fset *token.FileSet, files map[string]*ast.File
 				}
 				for _, field := range st.Fields.List {
 					ft, ok := field.Type.(*ast.FuncType)
+					if id, isIdent := field.Type.(*ast.Ident); !ok && isIdent {
+						ft, ok = named[id.Name]
+					}
 					if !ok {
 						continue
 					}
@@ -410,9 +429,12 @@ type Resolver struct {
 }
 type PolicyCache interface{ Load() }
 
+type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
 type Options2 struct {
 	Trace  func(Event)
 	Notify func(name string, err error)
+	Dial   DialFunc
 }
 
 var _ smtpwire.Reply
@@ -437,7 +459,7 @@ var _ smtpwire.Reply
 		[]string{"Resolver.Backend must be a function field", "PolicyCache must be a struct"}, []string{"Resolver.LookupMX", "Resolver.LookupIP"})
 
 	requireViolations(t, "callback signatures", callbackSignatureViolations(fset, files),
-		[]string{"Resolver.LookupMX must take (context.Context, *T)", "Resolver.LookupAny blocks on a context and must return error", "Options2.Notify must take (context.Context, *T) or one struct"},
+		[]string{"Resolver.LookupMX must take (context.Context, *T)", "Resolver.LookupAny blocks on a context and must return error", "Options2.Notify must take (context.Context, *T) or one struct", "Options2.Dial must take (context.Context, *T) or one struct"},
 		[]string{"Resolver.LookupIP", "Options2.Trace"})
 
 	requireViolations(t, "imports", importViolations(fset, files),

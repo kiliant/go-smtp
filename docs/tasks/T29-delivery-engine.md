@@ -115,6 +115,8 @@ it in.
   selects LMTP. Test the "LMTP partial prefix" row through the attempt
   function directly, and record that a public LMTP route would be a later
   additive field.
+- When the server's reply has no enhanced code, `Status` stays zero. Do not
+  derive one from the basic reply code.
 
 ## Done when
 

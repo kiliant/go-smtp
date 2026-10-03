@@ -97,6 +97,11 @@ it in.
   documents.
 - An MX that fails the policy is an `AttemptResult` with
   `Stage: StageResolve`.
+- A loaded entry whose `Body` is empty or does not parse is an **invalid
+  cached policy**. For example, it may have been written by a store that
+  predates `Body`. Decide between "defer" and "proceed as no policy" against
+  the design §5 table, record the decision, and test it. Expiry comes only from
+  the `max_age` parsed from `Body`, never from `Policy.MaxAge`.
 
 ## Done when
 
