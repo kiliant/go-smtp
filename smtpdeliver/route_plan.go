@@ -49,6 +49,10 @@ type routeHost struct {
 	implicit bool
 	// security is the DNSSEC state of the MX lookup that produced the host.
 	security DNSSECStatus
+	// nextHopCanonical is the destination domain after CNAME expansion of
+	// the MX lookup, when the resolver reported one that differs. RFC 7672
+	// §3.2.2 uses it as an extra DANE-TA reference identifier.
+	nextHopCanonical string
 }
 
 // routeStep is one entry of a route plan, in attempt order: either an address
@@ -59,6 +63,10 @@ type routeStep struct {
 	addr netip.Addr
 	// addrSecurity is the DNSSEC state of the address lookup.
 	addrSecurity DNSSECStatus
+	// addrCanonical is the host name after CNAME expansion of the address
+	// lookup, when the resolver reported one that differs; RFC 7672 §2.2.3
+	// tries it first as a TLSA base domain.
+	addrCanonical string
 	// skip says why the host was skipped. It is nil for an address step.
 	skip error
 }
@@ -168,9 +176,10 @@ func (p *routePlanner) resolveMX(ctx context.Context, domain string) ([]routeHos
 		return nil, &routeFailure{disposition: DispositionTemporary, status: statusDNSFailure, cause: fmt.Errorf("smtpdeliver: MX lookup for %s returned unknown state %q", domain, answer.State)}, nil
 	}
 
+	canonical := expandedName(answer.CanonicalName, domain)
 	if len(answer.Records) == 0 {
 		// RFC 5321 §5.1: an empty MX list is an implicit MX of preference 0.
-		return []routeHost{{name: domain, implicit: true, security: answer.Security}}, nil, nil
+		return []routeHost{{name: domain, implicit: true, security: answer.Security, nextHopCanonical: canonical}}, nil, nil
 	}
 
 	nullCount := 0
@@ -197,7 +206,7 @@ func (p *routePlanner) resolveMX(ctx context.Context, domain string) ([]routeHos
 			continue
 		}
 		if prev, ok := best[name]; !ok || mx.Preference < prev.pref {
-			best[name] = routeHost{name: name, pref: mx.Preference, security: answer.Security}
+			best[name] = routeHost{name: name, pref: mx.Preference, security: answer.Security, nextHopCanonical: canonical}
 		}
 	}
 	if len(best) == 0 {
@@ -302,6 +311,7 @@ func (p *routePlanner) resolveHost(ctx context.Context, domain string, host rout
 	skip := func(cause error) ([]routeStep, error) {
 		return []routeStep{{host: host, addrSecurity: answer.Security, skip: cause}}, nil
 	}
+	canonical := expandedName(answer.CanonicalName, host.name)
 	if err != nil {
 		return skip(&temporaryCause{fmt.Errorf("smtpdeliver: address lookup for %s: %w", host.name, err)})
 	}
@@ -324,7 +334,7 @@ func (p *routePlanner) resolveHost(ctx context.Context, domain string, host rout
 			continue
 		}
 		seen[addr] = true
-		steps = append(steps, routeStep{host: host, addr: addr, addrSecurity: answer.Security})
+		steps = append(steps, routeStep{host: host, addr: addr, addrSecurity: answer.Security, addrCanonical: canonical})
 	}
 	if len(steps) == 0 {
 		return skip(fmt.Errorf("%w: %s", errNoUsableAddresses, host.name))
@@ -403,4 +413,17 @@ func noAddressFailure(hosts []routeHost, steps []routeStep) *routeFailure {
 		status = statusDomainNotFound
 	}
 	return &routeFailure{disposition: DispositionPermanent, status: status, cause: errNoUsableMX, steps: steps}
+}
+
+// expandedName returns a resolver-reported canonical name when it is a valid
+// host name different from name, and "" otherwise.
+func expandedName(canonical, name string) string {
+	if canonical == "" {
+		return ""
+	}
+	normalized, err := normalizeDomain(canonical)
+	if err != nil || normalized == name {
+		return ""
+	}
+	return normalized
 }

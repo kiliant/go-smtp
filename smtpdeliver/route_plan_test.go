@@ -426,3 +426,27 @@ func (c *closeSpy) Close() error {
 	*c.closed = true
 	return c.Conn.Close()
 }
+
+func TestRoutePlanCarriesCanonicalNames(t *testing.T) {
+	f := newFakeResolver(DNSSECSecure)
+	mx := mxs(10, "mx.example.com", 20, "plain.example.com")
+	mx.CanonicalName = "Mail.Example.NET."
+	f.setMX("example.com", mx, nil)
+	alias := found("192.0.2.1")
+	alias.CanonicalName = "real.example.org"
+	f.setIP("mx.example.com", alias, nil)
+	same := found("192.0.2.2")
+	same.CanonicalName = "plain.example.com."
+	f.setIP("plain.example.com", same, nil)
+	p := newTestPlanner(t, f, nil)
+	plan, failure, err := p.plan(context.Background(), "example.com")
+	if err != nil || failure != nil {
+		t.Fatal(failure, err)
+	}
+	if s := plan.steps[0]; s.host.nextHopCanonical != "mail.example.net" || s.addrCanonical != "real.example.org" {
+		t.Errorf("step 0 canonical names = %q / %q", s.host.nextHopCanonical, s.addrCanonical)
+	}
+	if s := plan.steps[1]; s.addrCanonical != "" {
+		t.Errorf("an unchanged canonical name must be empty, got %q", s.addrCanonical)
+	}
+}
